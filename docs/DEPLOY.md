@@ -84,3 +84,37 @@ Open the printed play link in a phone browser, and the dashboard at the root URL
 - Dashboard/server code: pull, `npm run build`, restart.
 - Games: `npm run build:games` on a machine with Cocos Creator, commit `server/public/games`, redeploy.
 - The database schema is created automatically on first start.
+
+## This deployment (minigame.joura.info)
+
+| Item | Value |
+|---|---|
+| Server | Ubuntu VPS `72.60.26.180` (shared with other projects, nothing else was touched) |
+| Code | `/opt/minigame-studio` (git clone of this repo, branch `main`) |
+| Runtime | One Docker Compose project `minigame-studio`, container published on `127.0.0.1:3057` only |
+| Data | Docker volume `minigame-studio_minigames-data` mounted at `/data` (database, signing secret, uploads) |
+| Config | `/opt/minigame-studio/.env` (`PUBLIC_URL`, `HOST_PORT`), not in git |
+| Reverse proxy | nginx site file `/etc/nginx/sites-enabled/minigame.joura.info` with its own Let's Encrypt certificate (auto-renewed by certbot) |
+
+**Update to the latest code**
+
+```bash
+ssh root@72.60.26.180
+cd /opt/minigame-studio && git pull && docker compose up -d --build
+```
+
+**Logs / restart / status**
+
+```bash
+docker logs -f minigame-studio-minigames-1
+docker compose -f /opt/minigame-studio/docker-compose.yml restart
+docker compose -f /opt/minigame-studio/docker-compose.yml ps
+```
+
+**Back up the data**
+
+```bash
+docker run --rm -v minigame-studio_minigames-data:/data -v $PWD:/backup alpine tar czf /backup/minigames-data.tgz -C /data .
+```
+
+Do not run `npm run seed` against production: it creates a demo account. Real buyers just sign up in the dashboard.
