@@ -1,0 +1,15 @@
+name: minigame-studio
+services:
+  minigames:
+    build: .
+    restart: unless-stopped
+    ports:
+      # bound to localhost only; put nginx/caddy in front for public access
+      - "127.0.0.1:${HOST_PORT:-3000}:3000"
+    environment:
+      # the address clients use, e.g. https://minigame.example.com
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+    volumes:
+      - minigames-data:/data
+volumes:
+  minigames-data:

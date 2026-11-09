@@ -1,0 +1,86 @@
+# Deploying
+
+The whole product is **one Node.js process** (API + dashboard + game builds + docs + uploads) with a **SQLite file** and an **uploads folder** in one data directory. Nothing else is required.
+
+## What you need on the server
+
+- Node.js 24 or newer (for `node:sqlite`), **or** Docker
+- A persistent folder for data (`DATA_DIR`)
+- A public https address (reverse proxy such as nginx / Caddy) → set `PUBLIC_URL` to it
+
+## Option A: Docker (recommended)
+
+```bash
+git clone <repo> && cd <repo>
+PUBLIC_URL=https://games.example.com docker compose up -d --build
+```
+
+Data lives in the `minigames-data` volume (`/data` in the container). Back up that volume.
+
+## Option B: plain Node on a VM
+
+```bash
+npm ci
+npm run build                                # dashboard + sdk (game builds are already in server/public/games)
+export PUBLIC_URL=https://games.example.com
+export DATA_DIR=/var/lib/minigames
+export PORT=3000
+node --import tsx server/src/index.ts        # run under systemd / pm2
+```
+
+Example systemd unit:
+
+```ini
+[Unit]
+Description=MiniGame Studio
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/minigames
+Environment=PUBLIC_URL=https://games.example.com DATA_DIR=/var/lib/minigames PORT=3000 NODE_ENV=production
+ExecStart=/usr/bin/node --import tsx server/src/index.ts
+Restart=always
+User=minigames
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Reverse proxy (nginx)
+
+```nginx
+server {
+  listen 443 ssl http2;
+  server_name games.example.com;
+  # ssl_certificate ... (Let's Encrypt)
+  client_max_body_size 3m;                     # image uploads are limited to 2 MB
+  location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+The server trusts `X-Forwarded-*` headers (needed for correct rate limiting behind a proxy).
+
+## After deploying: smoke test
+
+```bash
+curl https://games.example.com/api/health          # {"ok":true,...}
+node scripts/seed-demo.mjs https://games.example.com   # creates a demo buyer and prints keys / play links
+```
+
+Open the printed play link in a phone browser, and the dashboard at the root URL.
+
+## What to hand to a client
+
+1. The production URL (the dashboard) and the integration guide at `<URL>/docs/`.
+2. They sign up, buy a game, copy the license key, paste it into their backend, embed `playUrl` in their site/app.
+
+## Updating
+
+- Dashboard/server code: pull, `npm run build`, restart.
+- Games: `npm run build:games` on a machine with Cocos Creator, commit `server/public/games`, redeploy.
+- The database schema is created automatically on first start.

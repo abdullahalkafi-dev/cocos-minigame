@@ -1,0 +1,4 @@
+[
+  {"__type__":"cc.SceneAsset","_name":"player","_objFlags":0,"__editorExtras__":{},"_native":"","scene":{"__id__":1}},
+  {"__type__":"cc.Scene","_name":"player","_objFlags":0,"__editorExtras__":{},"_parent":null,"_children":[],"_active":true,"_components":[],"_prefab":null,"autoReleaseAssets":false,"_id":"053e5c7f-7aeb-48b8-a181-13d9173ba2e8"}
+]

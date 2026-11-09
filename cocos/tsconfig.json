@@ -1,0 +1,5 @@
+{
+  "extends": "./temp/tsconfig.cocos.json",
+  "compilerOptions": { "strict": true, "skipLibCheck": true, "lib": ["ES2020", "DOM"] },
+  "exclude": ["tests", "build", "library", "temp", "node_modules", "profiles", "settings"]
+}

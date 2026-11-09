@@ -1,0 +1,23 @@
+{
+  "name": "minigame-studio",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "server",
+    "dashboard",
+    "sdk"
+  ],
+  "scripts": {
+    "start": "npm start -w server",
+    "dev:server": "npm run dev -w server",
+    "dev:dashboard": "npm run dev -w dashboard",
+    "build": "npm run build -w dashboard && npm run build -w sdk",
+    "build:games": "node scripts/build-games.mjs",
+    "build:all": "npm run build:games && npm run build",
+    "seed": "node scripts/seed-demo.mjs",
+    "test": "npm test -w server && node --import tsx --test cocos/tests/ludoRules.test.ts"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.0"
+  }
+}

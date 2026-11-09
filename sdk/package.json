@@ -1,0 +1,6 @@
+{
+  "name": "@mgs/sdk",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": { "build": "node -e \"require('fs').mkdirSync('../server/public/sdk',{recursive:true});require('fs').copyFileSync('minigames.js','../server/public/sdk/minigames.js')\"" }
+}

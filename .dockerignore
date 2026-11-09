@@ -1,0 +1,11 @@
+node_modules
+tmp
+server/data
+cocos/library
+cocos/temp
+cocos/build
+cocos/profiles
+cocos/assets
+cocos/settings
+.git
+*.log

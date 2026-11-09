@@ -1,0 +1,14 @@
+node_modules/
+tmp/
+server/data/
+server/public/app/
+server/public/sdk/
+# Cocos Creator generated
+cocos/library/
+cocos/temp/
+cocos/build/
+cocos/local/
+cocos/profiles/
+cocos/.creator/
+*.log
+.env
