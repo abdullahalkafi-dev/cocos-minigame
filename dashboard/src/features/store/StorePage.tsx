@@ -1,15 +1,17 @@
+'use client';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { api, copy, fmt } from '../api';
-import { useApp } from '../App';
-import { Badge, Button, Card, Icon, Modal, PageHead, Skeleton } from '../ui';
+import { useRouter } from 'next/navigation';
+import { api, copy, fmt } from '@/lib/api';
+import { gamePath } from '@/lib/paths';
+import { useApp } from '@/features/auth/auth-context';
+import { Badge, Button, Card, Icon, Modal, PageHead, Skeleton } from '@/components/ui';
 
 export default function Store() {
   const [games, setGames] = useState<any[] | null>(null);
   const [busy, setBusy] = useState('');
   const [bought, setBought] = useState<any>(null);
   const { user, refresh, toast } = useApp();
-  const nav = useNavigate();
+  const router = useRouter();
   useEffect(() => { api.get('/api/store').then(r => setGames(r.games)); }, []);
 
   const buy = async (g: any) => {
@@ -44,7 +46,7 @@ export default function Store() {
           <div className="secret">{bought.license.gameId}</div>
           <div className="row end">
             <Button icon="copy" onClick={async () => { await copy(bought.license.gameId); toast('Game ID copied'); }}>Copy game ID</Button>
-            <Button variant="primary" icon="palette" onClick={() => { const id = bought.license.id; setBought(null); nav(`/games/${id}`); }}>Customize my game</Button>
+            <Button variant="primary" icon="palette" onClick={() => { const id = bought.license.id; setBought(null); router.push(gamePath(id)); }}>Customize my game</Button>
           </div>
         </Modal>
       )}

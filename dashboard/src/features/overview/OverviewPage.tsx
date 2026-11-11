@@ -1,8 +1,10 @@
+'use client';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { api, fmt } from '../api';
-import { useApp } from '../App';
-import { Badge, Button, Card, Empty, Icon, PageHead, Skeleton } from '../ui';
+import Link from 'next/link';
+import { gamePath } from "@/lib/paths";
+import { api, fmt } from '@/lib/api';
+import { useApp } from '@/features/auth/auth-context';
+import { Badge, Button, Card, Empty, Icon, PageHead, Skeleton } from '@/components/ui';
 
 export default function Overview() {
   const { user } = useApp();
@@ -12,7 +14,7 @@ export default function Overview() {
 
   return (
     <div className="stack">
-      <PageHead title={`Welcome back${user?.email ? ', ' + user.email.split('@')[0] : ''}`} sub="Here is how your games are doing." actions={<Link to="/store"><Button variant="primary" icon="plus">Buy a game</Button></Link>} />
+      <PageHead title={`Welcome back${user?.email ? ', ' + user.email.split('@')[0] : ''}`} sub="Here is how your games are doing." actions={<Link href="/store"><Button variant="primary" icon="plus">Buy a game</Button></Link>} />
       {list === null ? <div className="stat-row">{[1, 2, 3, 4].map(i => <Card key={i} className="stat"><Skeleton h={14} w={90} /><Skeleton h={28} w={120} /></Card>)}</div> : (
         <div className="stat-row">
           <Card className="stat"><div className="ic"><Icon name="grid" size={17} /></div><span>Games</span><b>{fmt(list.length)}</b></Card>
@@ -22,17 +24,17 @@ export default function Overview() {
         </div>
       )}
       <div className="quick">
-        <Link to="/store"><span className="ic"><Icon name="store" /></span><div><b>Browse the store</b><div className="muted small">Get a new game and key</div></div></Link>
-        <Link to="/games"><span className="ic"><Icon name="palette" /></span><div><b>Customize a game</b><div className="muted small">Swap images, video, sound</div></div></Link>
+        <Link href="/store"><span className="ic"><Icon name="store" /></span><div><b>Browse the store</b><div className="muted small">Get a new game and key</div></div></Link>
+        <Link href="/games"><span className="ic"><Icon name="palette" /></span><div><b>Customize a game</b><div className="muted small">Swap images, video, sound</div></div></Link>
         <a href="/docs/" target="_blank" rel="noreferrer"><span className="ic"><Icon name="plug" /></span><div><b>Integration guide</b><div className="muted small">Website, Flutter, any app</div></div></a>
       </div>
       <Card>
-        <div className="row between" style={{ marginBottom: 14 }}><h2>Your games</h2><Link to="/games" className="small">View all</Link></div>
+        <div className="row between" style={{ marginBottom: 14 }}><h2>Your games</h2><Link href="/games" className="small">View all</Link></div>
         {list === null ? <Skeleton h={70} /> : list.length === 0 ? (
-          <Empty title="No games yet" text="Buy Lucky Wheel 77 to get your first game ID. It takes a few seconds." action={<Link to="/store"><Button variant="primary">Open the store</Button></Link>} />
+          <Empty title="No games yet" text="Buy Lucky Wheel 77 to get your first game ID. It takes a few seconds." action={<Link href="/store"><Button variant="primary">Open the store</Button></Link>} />
         ) : (
           <div className="stack-sm">{list.slice(0, 4).map(l => (
-            <Link key={l.id} to={`/games/${l.id}`} className="row" style={{ padding: 12, border: '1px solid var(--line)', borderRadius: 14, color: 'var(--text)' }}>
+            <Link key={l.id} href={gamePath(l.id)} className="row" style={{ padding: 12, border: '1px solid var(--line)', borderRadius: 14, color: 'var(--text)' }}>
               <div className="avatar" style={{ borderRadius: 12 }}><Icon name="play" size={16} /></div>
               <div className="grow"><b>{l.name}</b><div className="muted small mono">{l.gameId}</div></div>
               <Badge tone="brand">{fmt(l.stats.players)} players</Badge><Badge>{fmt(l.stats.rounds)} rounds</Badge><Icon name="arrow" size={16} />

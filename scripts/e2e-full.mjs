@@ -29,8 +29,8 @@ for (let i = 0; i < 2; i++) {
   await page.getByRole('button', { name: /Buy this game/ }).click();
   await page.waitForSelector('.secret');
   await page.getByRole('button', { name: /Customize my game/ }).click();
-  await page.waitForURL(/\/games\/lic_.*\/customize/);
-  ids.push(page.url().match(/games\/(lic_[^/]+)/)[1]);
+  await page.waitForURL(/\/game\?id=lic_/);
+  ids.push(new URL(page.url()).searchParams.get('id'));
 }
 console.log('2. bought 2 copies:', ids.join(', '));
 

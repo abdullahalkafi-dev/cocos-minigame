@@ -12,3 +12,8 @@ cocos/profiles/
 cocos/.creator/
 *.log
 .env
+
+dashboard/out/
+dashboard/.next/
+dashboard/next-env.d.ts
+*.tsbuildinfo

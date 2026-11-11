@@ -1,13 +1,20 @@
+'use client';
 import { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { api, copy } from '../api';
-import { useApp } from '../App';
-import { Badge, Button, Card, Icon, Modal, PageHead } from '../ui';
+import Link from 'next/link';
+import { api, copy } from '@/lib/api';
+import { gamePath } from '@/lib/paths';
+import { useOrigin } from '@/lib/use-origin';
+import { useApp } from '@/features/auth/auth-context';
+import { Badge, Button, Card, Icon, Modal, PageHead } from '@/components/ui';
 
 export default function ApiKeyPage() {
   const { user, refresh, toast } = useApp();
-  const loc = useLocation();
-  const [fresh, setFresh] = useState<string>((loc.state as any)?.newKey ?? '');
+  const origin = useOrigin();
+  const [fresh, setFresh] = useState<string>('');
+  // a brand-new account lands here with its key, handed over once through sessionStorage
+  useEffect(() => {
+    try { const k = sessionStorage.getItem('mgs_new_key'); if (k) { sessionStorage.removeItem('mgs_new_key'); setFresh(k); } } catch { /* ignore */ }
+  }, []);
   const [games, setGames] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
@@ -47,20 +54,20 @@ export default function ApiKeyPage() {
       <Card>
         <h2 style={{ marginBottom: 4 }}>Your games and their IDs</h2>
         <p className="muted" style={{ marginBottom: 14 }}>Send the game ID together with the key when you create a play session.</p>
-        {games.length === 0 ? <p className="muted">You don&apos;t own a game yet. <Link to="/store">Open the store</Link>.</p> : (
+        {games.length === 0 ? <p className="muted">You don&apos;t own a game yet. <Link href="/store">Open the store</Link>.</p> : (
           <div className="stack-sm">{games.map(g => (
             <div className="row" key={g.id} style={{ padding: 12, border: '1px solid var(--line)', borderRadius: 12 }}>
               <div className="grow"><b>{g.name}</b><div className="muted small">{g.game}</div></div>
               <span className="code">{g.gameId}</span>
               <Button size="sm" icon="copy" onClick={async () => { await copy(g.gameId); toast('Game ID copied'); }}>Copy ID</Button>
-              <Link to={`/games/${g.id}/integrate`}><Button size="sm" variant="ghost" icon="plug">Integrate</Button></Link>
+              <Link href={gamePath(g.id, "integrate")}><Button size="sm" variant="ghost" icon="plug">Integrate</Button></Link>
             </div>))}</div>
         )}
       </Card>
 
       <Card>
         <h2 style={{ marginBottom: 10 }}>Use it in 10 seconds</h2>
-        <div className="codebox"><pre>{`curl -X POST ${location.origin}/api/v1/sessions \\
+        <div className="codebox"><pre>{`curl -X POST ${origin}/api/v1/sessions \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"gameId":"${games[0]?.gameId ?? 'YOUR_GAME_ID'}"}'`}</pre></div>

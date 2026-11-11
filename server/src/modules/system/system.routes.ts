@@ -33,11 +33,20 @@ export function systemRoutes(c: Container) {
   mount('/docs', dir('docs'), { setHeaders: NO_CACHE });
   mount('/defaults', dir('defaults'), { maxAge: '7d' });
 
-  // The dashboard is a static build; unknown paths fall back to its index.html (client-side routing).
+  // The dashboard is a static Next.js export: /login -> login.html, hashed assets under /_next are cached for a year.
   const app = dir('app');
   if (fs.existsSync(app)) {
-    r.use(express.static(app, { setHeaders: NO_CACHE }));
-    r.get(/^\/(?!api\/|g\/|uploads\/|sdk\/|docs\/|defaults\/).*/, (_req, res) => { res.sendFile(path.join(app, 'index.html')); });
+    // links from older versions: /games/<id>/<tab> -> /game?id=<id>&tab=<tab>
+    r.get('/games/:id{/:tab}', (req, res) => {
+      const q = new URLSearchParams({ id: String(req.params.id), tab: String(req.params.tab ?? 'customize') });
+      res.redirect(302, `/game?${q}`);
+    });
+    r.use('/_next/static', express.static(path.join(app, '_next/static'), { maxAge: '365d', immutable: true }));
+    r.use(express.static(app, { extensions: ['html'], setHeaders: NO_CACHE }));
+    r.get(/^\/(?!api\/|g\/|uploads\/|sdk\/|docs\/|defaults\/).*/, (_req, res) => {
+      const page = path.join(app, '404.html');
+      res.status(404).sendFile(fs.existsSync(page) ? page : path.join(app, 'index.html'));
+    });
   }
   return r;
 }

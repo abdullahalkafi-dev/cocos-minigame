@@ -1,19 +1,21 @@
+'use client';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { api, fmt } from '../api';
-import { Badge, Button, Card, Empty, Icon, PageHead, Skeleton } from '../ui';
+import Link from 'next/link';
+import { gamePath } from "@/lib/paths";
+import { api, fmt } from '@/lib/api';
+import { Badge, Button, Card, Empty, Icon, PageHead, Skeleton } from '@/components/ui';
 
 export default function MyGames() {
   const [list, setList] = useState<any[] | null>(null);
   useEffect(() => { api.get('/api/licenses').then(r => setList(r.licenses)); }, []);
   return (
     <div className="stack">
-      <PageHead title="My games" sub="Every game has its own key, look and player list." actions={<Link to="/store"><Button icon="plus">Buy another</Button></Link>} />
+      <PageHead title="My games" sub="Every game has its own key, look and player list." actions={<Link href="/store"><Button icon="plus">Buy another</Button></Link>} />
       {list === null ? <div className="grid-cards">{[1, 2].map(i => <Card key={i}><Skeleton h={150} /></Card>)}</div> : list.length === 0 ? (
-        <Card><Empty icon="grid" title="No games yet" text="Pick a game in the store to get your first game." action={<Link to="/store"><Button variant="primary">Open the store</Button></Link>} /></Card>
+        <Card><Empty icon="grid" title="No games yet" text="Pick a game in the store to get your first game." action={<Link href="/store"><Button variant="primary">Open the store</Button></Link>} /></Card>
       ) : (
         <div className="grid-cards">{list.map(l => (
-          <Link to={`/games/${l.id}`} className="card game-tile" key={l.id}>
+          <Link href={gamePath(l.id)} className="card game-tile" key={l.id}>
             <div className="art"><img src="/defaults/lucky-wheel/wheel-frame.webp" alt="" /></div>
             <div className="body">
               <div className="row between"><h3>{l.name}</h3><Badge tone={l.status === 'active' ? 'good' : 'warn'}>{l.status}</Badge></div>

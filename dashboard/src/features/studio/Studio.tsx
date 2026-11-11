@@ -1,7 +1,8 @@
+'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, getPath, setPath } from '../api';
-import { useApp } from '../App';
-import { Badge, Button, Icon, MediaPreview, Switch, fmtBytes, typeOf, useDrop } from '../ui';
+import { api, getPath, setPath } from '@/lib/api';
+import { useApp } from '@/features/auth/auth-context';
+import { Badge, Button, Icon, MediaPreview, Switch, fmtBytes, typeOf, useDrop } from '@/components/ui';
 
 const ACCEPT: Record<string, string> = {
   image: 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml',

@@ -1,7 +1,8 @@
+'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, ago, fmt } from '../api';
-import { useApp } from '../App';
-import { Button, Card, Empty, Icon, Skeleton, Switch } from '../ui';
+import { api, ago, fmt } from '@/lib/api';
+import { useApp } from '@/features/auth/auth-context';
+import { Button, Card, Empty, Icon, Skeleton, Switch } from '@/components/ui';
 
 export default function PlayersTab({ data }: { data: any }) {
   const id = data.license.id;

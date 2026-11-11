@@ -1,4 +1,6 @@
+'use client';
 import { ReactNode, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 
 // ---------------------------------------------------------------- icons (inline SVG, 24px grid)
 const P: Record<string, string> = {
@@ -79,7 +81,7 @@ export function Modal({ children, onClose, title, wide }: { children: ReactNode;
 export function PageHead({ title, sub, actions, back }: { title: ReactNode; sub?: ReactNode; actions?: ReactNode; back?: { to: string; label: string } }) {
   return (
     <div className="page-head">
-      <div>{back && <a className="crumb" href={back.to} onClick={e => { e.preventDefault(); history.pushState({}, '', back.to); window.dispatchEvent(new PopStateEvent('popstate')); }}><Icon name="back" size={14} />{back.label}</a>}
+      <div>{back && <Link className="crumb" href={back.to}><Icon name="back" size={14} />{back.label}</Link>}
         <h1>{title}</h1>{sub && <p className="sub">{sub}</p>}</div>
       {actions && <div className="head-actions">{actions}</div>}
     </div>

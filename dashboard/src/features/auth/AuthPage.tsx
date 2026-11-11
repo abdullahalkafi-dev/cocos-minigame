@@ -1,24 +1,29 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { api, setToken } from '../api';
-import { useApp } from '../App';
-import { Button, Icon } from '../ui';
+'use client';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { api, setToken } from '@/lib/api';
+import { useApp } from '@/features/auth/auth-context';
+import { Button, Icon } from '@/components/ui';
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const { refresh } = useApp();
-  const nav = useNavigate();
+  const { refresh, ready, user } = useApp();
+  const submitted = useRef(false);
+  const router = useRouter();
+  // somebody who is already signed in has no business on the login page
+  useEffect(() => { if (ready && user && !submitted.current) router.replace('/'); }, [ready, user, router]);
 
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault(); setErr(''); setBusy(true);
+    e.preventDefault(); submitted.current = true; setErr(''); setBusy(true);
     try {
       const r = await api.post(`/api/auth/${mode}`, { email, password });
       setToken(r.token); await refresh();
       // a new account gets its API key right away (shown once)
-      if (r.apiKey) nav('/api-key', { state: { newKey: r.apiKey } }); else nav('/');
+      if (r.apiKey) { try { sessionStorage.setItem('mgs_new_key', r.apiKey); } catch { /* ignore */ } router.push('/api-key'); } else router.push('/');
     }
     catch (x: any) { setErr(x.message); }
     setBusy(false);
@@ -45,7 +50,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         {err && <div className="badge bad" style={{ padding: '10px 12px', borderRadius: 10, whiteSpace: 'normal' }}>{err}</div>}
         <Button variant="primary" size="lg" loading={busy}>{mode === 'login' ? 'Sign in' : 'Create account'}</Button>
         <p className="muted small" style={{ textAlign: 'center' }}>
-          {mode === 'login' ? <>New here? <Link to="/register">Create an account</Link></> : <>Already registered? <Link to="/login">Sign in</Link></>}
+          {mode === 'login' ? <>New here? <Link href="/register">Create an account</Link></> : <>Already registered? <Link href="/login">Sign in</Link></>}
         </p>
       </form>
     </div>

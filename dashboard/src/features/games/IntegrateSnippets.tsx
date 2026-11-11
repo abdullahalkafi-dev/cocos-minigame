@@ -1,8 +1,9 @@
+'use client';
 import { useState } from 'react';
-import { copy } from '../api';
-import { useApp } from '../App';
-import { Button, Card } from '../ui';
-import { clientSnippets, serverSnippets, Snip } from '../snippets';
+import { copy } from '@/lib/api';
+import { useApp } from '@/features/auth/auth-context';
+import { Button, Card } from '@/components/ui';
+import { clientSnippets, serverSnippets, Snip } from '@/lib/snippets';
 
 export function Snippets({ baseUrl, gameId }: { baseUrl: string; gameId: string }) {
   const { toast } = useApp();
