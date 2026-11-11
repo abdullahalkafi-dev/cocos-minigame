@@ -24,7 +24,8 @@ const g = await open(sess.playUrl + '&debug=1', { w: 390, h: 844, scale: 1 });
 await g.page.evaluate(() => { window.__events = []; window.MiniGames = { postMessage: m => window.__events.push(JSON.parse(m).type) }; });
 for (let k = 0; k < 100; k++) { if (await g.page.evaluate(() => !!window.__game?.chipNodes?.length && window.__game.chipNodes.every(Boolean))) break; await sleep(200); }
 await sleep(2500);
-const shown = await g.page.evaluate(() => ({ balance: window.__game.ctx.hud.balance, name: window.__game.ctx.player.username }));
+const shown = await g.page.evaluate(() => ({ balance: window.__game.ctx.hud.balance, name: window.__game.ctx.player.username, live: window.__game.live.healthy }));
+console.log('   live WebSocket connection in use:', shown.live ? 'OK' : 'MISMATCH (polling)');
 console.log(`3. game shows ${shown.name} with balance ${shown.balance}`, shown.balance === 60_000 && shown.name === 'Maria' ? 'OK' : 'MISMATCH');
 if (await g.page.locator('#mg-login').count()) console.log('   MISMATCH: a sign-in screen was shown');
 

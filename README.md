@@ -6,6 +6,8 @@ A reusable platform for selling customizable mini games:
 - **Buyer dashboard** (Next.js): sign up, buy games with demo credits, customize them in an asset studio with live preview, see players and results
 - **One API key per account + a game ID per game**: a buyer's server creates short-lived play links for any game they own; the game runs in any website or mobile app
 - **Embed SDK** for websites; WebView instructions for Flutter / Android / iOS
+- **Rooms and leaderboards**, **three wallet modes** (demo, managed by the client's server, seamless in the client's own database), **signed webhooks**, live **WebSocket push** for large audiences
+- **Documentation for humans and AI assistants**: [`docs/`](docs/README.md), [`AGENTS.md`](AGENTS.md), `/llms.txt`, `/openapi.json`
 
 **Stack:** Node.js 24 · Express 5 · TypeScript · MongoDB (Mongoose) · Redis · Next.js 15 · Cocos Creator 3.8
 
@@ -56,7 +58,7 @@ Open http://localhost:3000, create an account (10,000 demo credits), buy a game,
 ## Tests
 
 ```bash
-npm test                 # 16 server tests against an in-memory MongoDB replica set
+npm test                 # server tests (identity, wallets, webhooks, rooms, WebSocket, seamless wallet, OpenAPI) against an in-memory MongoDB replica set
 ```
 
 Headless-browser end-to-end scripts (`scripts/e2e-*.mjs`) are described in [`docs/guides/testing.md`](docs/guides/testing.md).
@@ -71,6 +73,6 @@ Headless-browser end-to-end scripts (`scripts/e2e-*.mjs`) are described in [`doc
 
 ## Known limits (by design, for now)
 
-- There is no payment provider: a client sells coins in its own system and tells us with the wallet API (or uses the demo wallet). The seamless-wallet mode (we call the client) and rooms are on the [roadmap](docs/roadmap.md).
+- There is no payment provider: a client sells coins in its own system and tells us with the wallet API, keeps them in its own database (seamless wallet), or uses the demo wallet.
 - Wheel art must have the same number of wedges as the wheel layout in the rules.
-- Players poll the round state once a second: fine for hundreds of concurrent players; thousands need push updates (roadmap).
+- The live hub runs in one server process; see [`docs/operations/load-testing.md`](docs/operations/load-testing.md) for what one process measured, and the roadmap for scaling out.

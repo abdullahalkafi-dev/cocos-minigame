@@ -1,7 +1,7 @@
 // Talks to the MiniGame Studio backend. The page URL carries ?session=<token>; the secret
 // API key never reaches this code.
 export interface Player { id: string; username: string; balance: number }
-export interface Bootstrap { game: string; config: any; player: Player | null; token: string | null }
+export interface Bootstrap { game: string; room?: string; config: any; player: Player | null; token: string | null }
 
 export interface WheelState {
   serverTime: number; balance: number;
@@ -26,6 +26,8 @@ export class Api {
     this.base = (q.get('api') || location.origin).replace(/\/$/, '');
   }
   get hasSession() { return !!this.token; }
+  /** The current session or player token (the live connection authenticates with it). */
+  get authToken() { return this.token; }
 
   private async req<T>(method: string, path: string, body?: unknown): Promise<T> {
     let res: Response;

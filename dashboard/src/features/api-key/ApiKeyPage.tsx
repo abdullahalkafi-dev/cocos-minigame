@@ -7,6 +7,8 @@ import { useOrigin } from '@/lib/use-origin';
 import { useApp } from '@/features/auth/auth-context';
 import { Badge, Button, Card, Icon, Modal, PageHead } from '@/components/ui';
 import WebhookCard from './WebhookCard';
+import WalletEndpointCard from './WalletEndpointCard';
+import TestKeyCard from './TestKeyCard';
 
 export default function ApiKeyPage() {
   const { user, refresh, toast } = useApp();
@@ -52,6 +54,8 @@ export default function ApiKeyPage() {
         <p className="muted small" style={{ marginTop: 12 }}>Lost it or leaked it? Rotate it: a new key is created and the old one stops working immediately, for all your games at once.</p>
       </Card>
 
+      <TestKeyCard />
+
       <Card>
         <h2 style={{ marginBottom: 4 }}>Your games and their IDs</h2>
         <p className="muted" style={{ marginBottom: 14 }}>Send the game ID together with the key when you create a play session.</p>
@@ -82,6 +86,7 @@ export default function ApiKeyPage() {
         </Modal>
       )}
       <WebhookCard />
+      <WalletEndpointCard />
     </div>
   );
 }

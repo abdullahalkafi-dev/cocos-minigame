@@ -53,6 +53,9 @@ export function createApp(c: Container) {
 export function createHttpServer(c: Container) {
   const app = createApp(c);
   const server = http.createServer(app);
+  // behind a reverse proxy: keep idle connections a little longer than the proxy does, so it never reuses one we just closed
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
   const sockets = attachWheelSocket(server, { hub: c.hub, sessions: c.sessions, games: c.games, players: c.players, rooms: c.rooms });
   return { app, server, sockets };
 }

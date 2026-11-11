@@ -1,0 +1,27 @@
+# MiniGame Studio
+
+> A platform of customizable mini games (first game: Lucky Wheel 77) that a company embeds in its own website or mobile app. The company's own system logs users in and (optionally) holds the coins; MiniGame Studio runs the game, keeps results and offers APIs and signed webhooks.
+
+Start here if you are an AI assistant helping a developer integrate the games:
+
+- [Full reference in one file]({{HOST}}/llms-full.txt): playbook, glossary, task prompts and the complete API reference. Prefer this.
+- [Integration playbook]({{HOST}}/docs/ai/integration-playbook.md): the step-by-step guide written for AI assistants.
+- [OpenAPI contract]({{HOST}}/openapi.json): machine-readable API (OpenAPI 3.1), including webhooks and the seamless wallet protocol.
+- [Postman collection]({{HOST}}/postman.json): the same API as a collection.
+- [Human integration guide]({{HOST}}/docs/): code examples in Node.js, Python, Java, PHP, cURL, JavaScript, React and Flutter.
+
+## Task prompts (copy, fill in, paste)
+
+- [integrate sessions]({{HOST}}/docs/ai/prompts/integrate-sessions.md)
+- [integrate managed wallet]({{HOST}}/docs/ai/prompts/integrate-managed-wallet.md)
+- [integrate seamless wallet]({{HOST}}/docs/ai/prompts/integrate-seamless-wallet.md)
+- [webhook receiver]({{HOST}}/docs/ai/prompts/webhook-receiver.md)
+- [rooms and leaderboards]({{HOST}}/docs/ai/prompts/rooms-and-leaderboards.md)
+- [review my integration]({{HOST}}/docs/ai/prompts/review-my-integration.md)
+
+## Key facts
+
+- Authenticate server calls with `Authorization: Bearer mgs_...` (live) or `mgs_test_...` (test games). The key lives on the developer's backend only.
+- The developer's backend creates a play session (`POST /api/v1/sessions`) with its own `playerId`; the player never signs in to us.
+- Money calls (`credit`, `debit`) need a unique `reference`; repeating it returns the first answer and never moves coins twice.
+- Errors are `{ "error", "code" }`: branch on `code`.

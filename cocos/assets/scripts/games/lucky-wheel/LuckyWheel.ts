@@ -6,6 +6,7 @@ import { WheelState } from '../../core/Api';
 import { cached, makeFrame, panelFrame, radial, rr, sprite, Tex, vgrad } from '../../core/Art';
 import { AssetRef, MediaHandle, spawnMedia, spawnSprite, stillFrame } from '../../core/Media';
 import { Ticker } from '../../core/Ticker';
+import { LiveFeed } from '../../core/Live';
 import { Sfx } from '../../core/Sfx';
 import { emit } from '../../core/Host';
 import { clamp, countTo, ensureOpacity, fmtNum, hex, mk, popIn, rand, shade, wait } from '../../core/Util';
@@ -57,6 +58,7 @@ export class LuckyWheel extends Game {
   private resultDone = 0;                          // round number whose result presentation ran
   private summaryDone = 0;
   private pollAcc = 0;
+  private live: LiveFeed | null = null;              // WebSocket push; polling is only the fallback
   private polling = false;
   private soundBtn: Node | null = null;
   top = 640; bot = -640; wy = 150;
@@ -93,6 +95,9 @@ export class LuckyWheel extends Game {
     await this.build(stage);
     this.ctx.hud.onBalance((v, animate) => this.showBalance(v, animate));
     this.applyState(this.st);
+    // the server pushes the state: no need to ask every second while the live connection works
+    this.live = new LiveFeed(this.ctx.api, st => { this.st = st; this.applyState(st); }, offset => { this.offset = offset; });
+    this.live.start();
     Ticker.add(dt => { this.tick(dt); });
     // a second ticker for polling keeps working even while animations run
     return;
@@ -416,7 +421,7 @@ export class LuckyWheel extends Game {
   private tick(dt: number) {
     if (!this.st) return;
     this.pollAcc += dt;
-    if (this.pollAcc >= 1) { this.pollAcc = 0; void this.refresh(); }
+    if (this.pollAcc >= (this.live?.healthy ? 15 : 1)) { this.pollAcc = 0; void this.refresh(); }   // 15 s: a safety net while the push works
     const r = this.st.round, now = this.now();
     const phase = now < r.betEnd ? 'betting' : now < r.spinEnd ? 'spinning' : 'result';
 
@@ -467,7 +472,7 @@ export class LuckyWheel extends Game {
     }
     if (phase === 'result' && r.result && this.resultDone !== r.no) { this.resultDone = r.no; this.onResult(); }
     if (phase === 'result' && r.summary && this.summaryDone !== r.no) { this.summaryDone = r.no; void this.onSummary(); }
-    if (phase === 'result' && !r.summary && now - r.spinEnd > 350 && this.pollAcc > 0.4) { this.pollAcc = 1; }   // fetch the payout summary quickly
+    if (phase === 'result' && !r.summary && now - r.spinEnd > 350 && this.pollAcc > 0.4 && !this.live?.healthy) { this.pollAcc = 1; }   // fetch the payout summary quickly
   }
 
   private segAngle() { return 360 / this.segs.length; }

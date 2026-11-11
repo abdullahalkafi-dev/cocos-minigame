@@ -12,10 +12,11 @@ export default function SettingsTab({ data, reload }: { data: any; reload: () =>
   const [origins, setOrigins] = useState<string[]>(license.allowedOrigins);
   const [draft, setDraft] = useState('');
   const [guest, setGuest] = useState<boolean>(!!license.guestLogin);
-  const [wallet, setWallet] = useState<'demo' | 'managed'>(license.walletMode === 'managed' ? 'managed' : 'demo');
+  const [wallet, setWallet] = useState<'demo' | 'managed' | 'seamless'>(license.walletMode === 'managed' || license.walletMode === 'seamless' ? license.walletMode : 'demo');
+  const [mode, setMode] = useState<'live' | 'test'>(license.mode === 'test' ? 'test' : 'live');
 
   const addOrigin = () => { const v = draft.trim().replace(/\/$/, ''); if (!v) return; if (!/^https?:\/\/[\w.-]+(:\d+)?$/.test(v)) { toast('Use the form https://example.com (no path)', 'err'); return; } if (!origins.includes(v)) setOrigins([...origins, v]); setDraft(''); };
-  const save = async () => { try { await api.put(`/api/licenses/${license.id}`, { name, allowedOrigins: origins, guestLogin: guest, walletMode: wallet }); toast('Settings saved'); reload(); } catch (e: any) { toast(e.message, 'err'); } };
+  const save = async () => { try { await api.put(`/api/licenses/${license.id}`, { name, allowedOrigins: origins, guestLogin: guest, walletMode: wallet, mode }); toast('Settings saved'); reload(); } catch (e: any) { toast(e.message, 'err'); } };
 
   return (
     <div className="stack" style={{ maxWidth: 820 }}>
@@ -30,8 +31,16 @@ export default function SettingsTab({ data, reload }: { data: any; reload: () =>
         <div className="seg">
           <button className={wallet === 'demo' ? 'on' : ''} onClick={() => setWallet('demo')}>Demo wallet</button>
           <button className={wallet === 'managed' ? 'on' : ''} onClick={() => setWallet('managed')}>Managed by my server</button>
+          <button className={wallet === 'seamless' ? 'on' : ''} onClick={() => setWallet('seamless')}>Seamless (my wallet)</button>
         </div>
-        <div className="help">{wallet === 'demo' ? 'Every new player starts with the starting balance from Customize, and can take a free refill. Good for demos.' : 'New players start with 0. Your server adds coins with the credit API when you sell them and removes them with debit. The free refill is switched off. See the Integrate tab, step 3.'}</div>
+        <div className="help">{wallet === 'demo' ? 'Every new player starts with the starting balance from Customize, and can take a free refill. Good for demos.' : wallet === 'managed' ? 'New players start with 0. Your server adds coins with the credit API when you sell them and removes them with debit. The free refill is switched off. See the Integrate tab, step 3.' : 'The coins stay in YOUR system: for every bet and win we call your wallet address (set it on the API key & webhooks page). Nothing is stored here except the history.'}</div>
+        <div style={{ height: 18 }} />
+        <label className="lbl">Environment</label>
+        <div className="seg">
+          <button className={mode === 'live' ? 'on' : ''} onClick={() => setMode('live')}>Live</button>
+          <button className={mode === 'test' ? 'on' : ''} onClick={() => setMode('test')}>Test game</button>
+        </div>
+        <div className="help">{mode === 'test' ? 'A test game only answers to your TEST API key (mgs_test_…), so test traffic never mixes with live statistics. Webhooks for it carry livemode: false.' : 'A live game answers to your live API key (mgs_…).'}</div>
       </Card>
       <Card>
         <h2 style={{ marginBottom: 14 }}>General</h2>

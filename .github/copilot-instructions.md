@@ -1,0 +1,3 @@
+# Copilot instructions
+
+Follow `AGENTS.md` in the repository root (rules, commands, map, definition of done). AI guides: `docs/ai/README.md`.

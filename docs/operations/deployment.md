@@ -42,7 +42,11 @@ node --import tsx server/src/server.ts       # run under systemd / pm2, with the
 
 ## Reverse proxy (nginx)
 
+The live game uses a **WebSocket** (`/ws`), so the proxy must pass the upgrade headers (the game falls back to polling if it cannot connect, but push is what keeps large rooms cheap):
+
 ```nginx
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
 server {
   listen 443 ssl http2;
   server_name games.example.com;
@@ -50,12 +54,36 @@ server {
   client_max_body_size 13m;                    # uploads are limited to 12 MB (videos up to 10 MB)
   location / {
     proxy_pass http://127.0.0.1:3057;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;                   # the server pings every 30 s
   }
 }
 ```
+
+## Optional settings
+
+| Variable | Meaning |
+|---|---|
+| `METRICS_TOKEN` | Enables `GET /api/metrics` (CPU, memory, event-loop delay, live rooms), sent as header `x-metrics-token`. Unset = the endpoint answers 404 |
+| `ALLOW_PRIVATE_WEBHOOKS=1` | Development only: lets webhook and wallet addresses point to local/private networks |
+
+## GitHub: private repository and a deploy key
+
+The repository holds the client's artwork and should be **private**. After switching it (GitHub → Settings → General → Danger Zone → Change visibility), the server must authenticate to pull:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/minigame_deploy -N "" -C minigame-deploy      # on the server
+cat ~/.ssh/minigame_deploy.pub                                                  # add it in GitHub → repo → Settings → Deploy keys (read-only)
+cd /opt/minigame-studio && git remote set-url origin git@github.com:<owner>/<repo>.git
+GIT_SSH_COMMAND='ssh -i ~/.ssh/minigame_deploy -o IdentitiesOnly=yes' git pull
+```
+
+(Set `core.sshCommand` in the repository's git config so a plain `git pull` uses the key.) CI (`.github/workflows/ci.yml`) runs type checks, the tests and the dashboard build on every push.
 
 ## Smoke test
 

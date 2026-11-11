@@ -106,16 +106,14 @@ export function createWheelHub(d: { wheel: WheelService; games: GameService; roo
   };
   const pushClient = (rt: RoomRuntime, c: HubClient) => { if (rt.round) sendTo(rt, c, frame(rt, Date.now())); };
 
-  /** Brings a room's memory up to date with the database and sends it to everybody in it. */
-  async function tick(rt: RoomRuntime, now: number) {
-    if (rt.busy) return;
-    rt.busy = true;
+  /** Brings a room's memory up to date with the database. Returns false when the room cannot be served (game gone, room closed). */
+  async function refresh(rt: RoomRuntime, now: number): Promise<boolean> {
     try {
       if (!rt.game || now - rt.cfgAt > CFG_REFRESH_MS) {
         rt.game = await d.games.get(rt.gameId);
-        if (!rt.game || rt.game.status !== 'active') { for (const c of rt.clients) c.ws.close(4003, 'game not active'); return; }
+        if (!rt.game || rt.game.status !== 'active') { for (const c of rt.clients) c.ws.close(4003, 'game not active'); return false; }
         rt.room = rt.roomKey === MAIN_ROOM ? await d.rooms.main(rt.game) : await d.rooms.get(rt.game, rt.roomKey);
-        if (!rt.room) { for (const c of rt.clients) c.ws.close(4004, 'room closed'); return; }
+        if (!rt.room) { for (const c of rt.clients) c.ws.close(4004, 'room closed'); return false; }
         rt.cfg = d.rooms.effectiveConfig(rt.game, rt.room);
         rt.cfgAt = now;
       }
@@ -140,9 +138,15 @@ export function createWheelHub(d: { wheel: WheelService; games: GameService; roo
         rt.presenceAt = now;
         void d.rooms.touch(rt.gameId, rt.roomKey, [...rt.clients].map(c => c.playerId));
       }
-      pushRoom(rt);
-    } catch (e) { console.error('hub tick', rt.gameId, rt.roomKey, e); }
-    finally { rt.busy = false; }
+      return true;
+    } catch (e) { console.error('hub refresh', rt.gameId, rt.roomKey, e); return false; }
+  }
+
+  /** One heartbeat of a room: update the memory, then send the picture to everybody in it. */
+  async function tick(rt: RoomRuntime, now: number) {
+    if (rt.busy) return;
+    rt.busy = true;
+    try { if (await refresh(rt, now)) pushRoom(rt); } finally { rt.busy = false; }
   }
 
   const hub = {
@@ -171,7 +175,12 @@ export function createWheelHub(d: { wheel: WheelService; games: GameService; roo
       const rt = runtimeFor(c.gameId, c.roomKey);
       rt.clients.add(c);
       const set = byPlayer.get(c.playerId) ?? new Set<HubClient>(); set.add(c); byPlayer.set(c.playerId, set);
-      await tick(rt, Date.now());
+      // Only the newcomer needs a picture now. Re-sending to the whole room for every join would cost N x N messages in a rush.
+      if (!rt.round) {
+        if (rt.busy) { for (let i = 0; i < 50 && !rt.round; i++) await new Promise(r => setTimeout(r, 40)); }
+        else { rt.busy = true; try { await refresh(rt, Date.now()); } finally { rt.busy = false; } }
+      }
+      pushClient(rt, c);
     },
     leave(c: HubClient) {
       runtimes.get(keyOf(c.gameId, c.roomKey))?.clients.delete(c);

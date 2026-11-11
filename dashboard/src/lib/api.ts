@@ -24,6 +24,7 @@ export const api = {
   get: <T = any>(u: string) => call<T>('GET', u),
   post: <T = any>(u: string, b?: any) => call<T>('POST', u, b ?? {}),
   put: <T = any>(u: string, b?: any) => call<T>('PUT', u, b ?? {}),
+  del: <T = any>(u: string) => call<T>('DELETE', u),
   upload: async (licenseId: string, file: File, kind = 'image'): Promise<{ url: string; type: string; size: number; name: string }> => {
     const fd = new FormData(); fd.append('file', file);
     return call('POST', '/api/licenses/' + licenseId + '/upload?kind=' + kind, fd, true);

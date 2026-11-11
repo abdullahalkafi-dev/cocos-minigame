@@ -1,4 +1,5 @@
 import express, { Router, type RequestHandler } from 'express';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Container } from '../../container.js';
@@ -17,10 +18,20 @@ export function systemRoutes(c: Container) {
 
   r.get('/api/health', (_req, res) => { res.json({ ok: true, time: Date.now(), cache: c.cache.kind }); });
   r.get('/openapi.json', (_req, res) => { res.json(buildOpenApi(c.env.publicUrl)); });
+  // AI-friendly bundles: generated files with {{HOST}} replaced by this server's address
+  for (const [url, file, type] of [['/llms.txt', 'llms.txt', 'text/plain'], ['/llms-full.txt', 'llms-full.txt', 'text/plain'], ['/postman.json', 'postman.json', 'application/json']] as const) {
+    r.get(url, (_req, res) => {
+      const f = path.join(publicDir, file);
+      if (!fs.existsSync(f)) { res.status(404).json({ error: 'Not found', code: 'not_found' }); return; }
+      res.type(type + '; charset=utf-8').send(fs.readFileSync(f, 'utf8').replaceAll('{{HOST}}', c.env.publicUrl));
+    });
+  }
   // process and live-room numbers for load tests and checks: only when METRICS_TOKEN is set, and only with that token
   r.get('/api/metrics', (req, res) => {
     const token = process.env.METRICS_TOKEN;
-    if (!token || req.headers['x-metrics-token'] !== token) { res.status(404).json({ error: 'Not found', code: 'not_found' }); return; }
+    const given = String(req.headers['x-metrics-token'] ?? '');
+    const same = !!token && given.length === token.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(token));
+    if (!same) { res.status(404).json({ error: 'Not found', code: 'not_found' }); return; }
     res.json({ ...c.metrics.snapshot(), hub: c.hub.stats() });
   });
 

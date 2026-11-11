@@ -12,12 +12,15 @@ import type { HubClient, WheelHub } from './wheel.hub.js';
 
 const MAX_SOCKETS_PER_PLAYER = 3;
 const AUTH_TIMEOUT_MS = 5000;
+/** One process refuses more connections than this (protects memory); the game then falls back to polling. */
+const MAX_SOCKETS = Number(process.env.MAX_SOCKETS) || 60_000;
 
 export function attachWheelSocket(server: Server, d: { hub: WheelHub; sessions: SessionService; games: GameService; players: PlayerService; rooms: RoomService }) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 2048 });
 
   server.on('upgrade', (req, socket, head) => {
     if (new URL(req.url ?? '/', 'http://x').pathname !== '/ws') { socket.destroy(); return; }
+    if (wss.clients.size >= MAX_SOCKETS) { socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n'); socket.destroy(); return; }
     wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
   });
 

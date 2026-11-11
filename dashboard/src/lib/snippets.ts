@@ -147,6 +147,62 @@ def credit_coins(user_id, amount, order_id):
   };
 }
 
+/** Rooms and leaderboards. */
+export function roomSnippets(host: string, gameId: string): Record<string, Snip> {
+  return {
+    curl: { label: 'cURL', lang: 'sh', code: `# Create a room (a VIP table with its own chips and a limit of 20 players)
+curl -X POST ${host}/api/v1/games/${gameId}/rooms \
+  -H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" \
+  -d '{"key":"vip","name":"VIP table","capacity":20,"auto":false,"overrides":{"chips":[100000,500000,1000000],"maxPerTarget":2000000}}'
+
+# Put a player in a room: "auto" (default: the first room with space) or a room key
+curl -X POST ${host}/api/v1/sessions \
+  -H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" \
+  -d '{"gameId":"${gameId}","playerId":"user-8841","room":"vip"}'
+
+# Rooms with the number of players online (for your own lobby screen)
+curl ${host}/api/v1/games/${gameId}/rooms -H "Authorization: Bearer YOUR_API_KEY"
+
+# A ranking for your app: period = day | week | month | all, metric = winnings | net | wagered | biggest_win
+curl "${host}/api/v1/games/${gameId}/leaderboard?room=vip&period=week&metric=winnings&limit=10&playerId=user-8841" \
+  -H "Authorization: Bearer YOUR_API_KEY"` },
+  };
+}
+
+/** The endpoint YOU implement for the seamless wallet. */
+export function seamlessSnippets(): Record<string, Snip> {
+  return {
+    node: { label: 'Node.js', lang: 'js', code: `import crypto from 'node:crypto';
+import express from 'express';
+const app = express();
+
+// One address receives every wallet request: ping, balance, debit (a stake), credit (a win), rollback.
+app.post('/minigame-wallet', express.raw({ type: 'application/json' }), async (req, res) => {
+  // 1. verify the signature (same as webhooks) on the RAW body
+  const ts = req.header('X-Minigame-Timestamp');
+  const expected = 'v1=' + crypto.createHmac('sha256', process.env.MINIGAME_WEBHOOK_SECRET).update(ts + '.' + req.body.toString('utf8')).digest('hex');
+  if (req.header('X-Minigame-Signature') !== expected) return res.status(400).end();
+
+  const m = JSON.parse(req.body.toString('utf8'));   // { type, gameId, livemode, playerId, amount, reference, note }
+  if (m.type === 'ping') return res.json({ ok: true });
+
+  // 2. "reference" is an idempotency key: if you already handled it, answer exactly the same again
+  const done = await db.findOperation(m.reference);
+  if (done && m.type !== 'rollback') return res.json({ balance: done.balanceAfter });
+
+  if (m.type === 'balance') return res.json({ balance: await db.balance(m.playerId) });
+  if (m.type === 'debit') {
+    const balance = await db.debitIfEnough(m.playerId, m.amount, m.reference);   // atomic
+    if (balance === null) return res.status(402).json({ code: 'insufficient_balance' });
+    return res.json({ balance });
+  }
+  if (m.type === 'credit') return res.json({ balance: await db.credit(m.playerId, m.amount, m.reference) });
+  if (m.type === 'rollback') return res.json({ balance: await db.undoDebitIfApplied(m.playerId, m.reference) });   // does nothing if that debit never happened
+  res.status(400).json({ code: 'unknown_type' });
+});` },
+  };
+}
+
 /** Step 4: verify the signature of notifications sent to your server. */
 export function webhookSnippets(): Record<string, Snip> {
   return {

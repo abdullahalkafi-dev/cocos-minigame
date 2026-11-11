@@ -15,7 +15,8 @@
     "build:games": "node scripts/build-games.mjs",
     "build:all": "npm run build:games && npm run build",
     "seed": "node scripts/seed-demo.mjs",
-    "test": "npm test -w server"
+    "test": "npm test -w server",
+    "build:ai-docs": "node --import tsx scripts/build-ai-docs.mjs"
   },
   "devDependencies": {
     "playwright": "^1.65.0",

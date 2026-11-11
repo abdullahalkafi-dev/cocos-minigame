@@ -5,6 +5,7 @@ import { decryptSecret } from '../../common/utils/crypto.js';
 import { inTransaction, isDuplicateKey } from '../../infra/mongo.js';
 import type { Bus } from '../../infra/bus.js';
 import type { GameRec } from '../games/game.model.js';
+import type { GameService } from '../games/game.service.js';
 import type { LedgerService } from '../ledger/ledger.service.js';
 import type { PlayerRec } from '../players/player.model.js';
 import type { UserRepository } from '../users/user.repository.js';
@@ -32,7 +33,7 @@ type Outcome =
  * retried until they succeed.
  */
 export function createSeamlessService(d: {
-  repo: SeamlessRepository; users: UserRepository; webhooks: WebhookService; ledger: LedgerService; bus: Bus; allowPrivate: boolean; secret: string;
+  repo: SeamlessRepository; users: UserRepository; games: GameService; webhooks: WebhookService; ledger: LedgerService; bus: Bus; allowPrivate: boolean; secret: string;
 }) {
   const owner = async (g: GameRec) => (await d.users.byId(g.userId))!;
 
@@ -133,8 +134,7 @@ export function createSeamlessService(d: {
     // ------------------------------------------------------------ the worker
     async attempt(op: SeamlessOpRec) {
       const u = await d.users.byId(op.userId);
-      const g = (await import('../games/game.model.js')).GameModel;
-      const game = (await g.findById(op.gameId).lean()) as unknown as GameRec | null;
+      const game = await d.games.get(op.gameId);
       const attempts = op.attempts + 1;
       const r = u && game
         ? await send(u, game, op.type, { playerId: op.externalId, amount: op.amount, note: op.note }, op.type === 'rollback' ? op._id.slice(3) : op._id, 8000)

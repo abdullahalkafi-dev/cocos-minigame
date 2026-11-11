@@ -9,11 +9,13 @@ import Studio from '@/features/studio/Studio';
 import PlayersTab from './PlayersTab';
 import IntegrateTab from './IntegrateTab';
 import SettingsTab from './SettingsTab';
+import RoomsTab from './RoomsTab';
 
 const TABS: { id: GameTab; label: string; icon: string }[] = [
   { id: 'customize', label: 'Customize', icon: 'palette' },
   { id: 'integrate', label: 'Integrate', icon: 'plug' },
   { id: 'players', label: 'Players & results', icon: 'chart' },
+  { id: 'rooms', label: 'Rooms', icon: 'users' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
@@ -38,6 +40,7 @@ function GameDetail() {
       {tab === 'customize' && <Studio data={data} />}
       {tab === 'integrate' && <IntegrateTab data={data} />}
       {tab === 'players' && <PlayersTab data={data} />}
+      {tab === 'rooms' && <RoomsTab data={data} />}
       {tab === 'settings' && <SettingsTab data={data} reload={load} />}
     </div>
   );

@@ -1,0 +1,577 @@
+# MiniGame Studio: full integration reference for AI assistants
+
+> Everything an AI assistant needs to help a developer integrate MiniGame Studio (customizable mini games) into their own website or app.
+> Server address: {{HOST}}. Machine-readable contract: {{HOST}}/openapi.json. Human guide: {{HOST}}/docs/.
+> Read the whole file before writing code. Do not invent endpoints, fields or error codes that are not written here.
+
+# Part 1: Integration playbook
+
+
+You are helping a developer put the **MiniGame Studio** game into *their own* website or app. Read this whole file before writing code.
+Everything here is exact. If something is not written here, do not invent it: ask the developer, or read `/openapi.json`.
+
+### 1. The model in five sentences
+
+1. The developer's **own system** logs their users in and owns the user accounts. We never see passwords and never check logins.
+2. Their **backend** (never the browser or the mobile app) calls our API with a **secret API key** to create a **play session** for one player and gets a short-lived `playUrl` (valid 15 minutes).
+3. Their front-end shows the `playUrl` in an **iframe** (web) or a **WebView** (Flutter, Android, iOS). The player lands straight in the game.
+4. **Coins** are handled in one of three ways (chosen per game in the dashboard): *demo* (we give a starting balance), *managed* (their server calls `credit`/`debit`), *seamless* (the coins stay in their database; we call an endpoint they implement).
+5. We tell their server what happened with **signed webhooks** (for example after each round).
+
+### 2. Facts you can rely on
+
+- Base URL: the host serving this document (for example `https://minigame.joura.info`). Send `Authorization: Bearer <API key>` to every `/api/v1/*` call. Bodies are JSON.
+- Keys: live key `mgs_...`, test key `mgs_test_...`. A **test game** only answers to the test key; a live game only to the live key (`403 wrong_environment` otherwise).
+- A game has a **game ID** `lic_...` (not secret). One API key works for all the account's games.
+- A **player id** is the developer's own id for a person: 1-64 characters from `A-Z a-z 0-9 _ . : @ -`. The same person must always get the same id. Never use a password or a secret as a player id.
+- Amounts are **whole numbers** from 1 to 1,000,000,000,000.
+- Every error is `{ "error": "<message>", "code": "<machine_code>" }`. Branch on `code`, show `error` to humans.
+- Rate limits: 300 session creations/min, 600 wallet calls/min per key. `429 rate_limited` when exceeded.
+
+### 3. Decide before coding (ask the developer if unclear)
+
+| Question | If yes |
+|---|---|
+| Do they sell or hold coins in their own system? | Use **managed** (simple) or **seamless** (coins must stay in their database) wallet. Otherwise **demo** |
+| Must the coins stay in the developer's own database, with us never holding the balance? | **Seamless** wallet |
+| Do they want several tables / VIP rooms / one huge event? | Use **rooms** (`room` in the session request) |
+| Do they want to show a ranking in their app? | Use the **leaderboard** endpoint |
+| Do they want to react to results on their server? | Implement a **webhook** receiver |
+
+### 4. Steps (do them in this order)
+
+#### Step 1 — backend endpoint that creates a session
+
+The developer's endpoint (for example `POST /game-session`) must:
+1. Check that the caller is logged in **to the developer's own system**. If not, answer 401. (This is the whole security model: we trust the player id because only their server can send it.)
+2. Call `POST /api/v1/sessions` with `{ "gameId": "lic_...", "playerId": "<their user id>", "displayName": "<name>", "room": "auto" }`.
+3. Return our JSON answer (or just `playUrl`) to their front-end.
+
+```http
+POST /api/v1/sessions
+Authorization: Bearer mgs_...
+Content-Type: application/json
+
+{ "gameId": "lic_AbC123xYz", "playerId": "user-8841", "displayName": "Maria", "room": "auto" }
+→ 200 { "playUrl": "https://.../g/lucky-wheel/?session=...", "sessionToken": "...", "expiresIn": 900,
+        "gameId": "lic_AbC123xYz", "game": "lucky-wheel", "playerId": "user-8841", "room": "main" }
+```
+
+Node/Express skeleton (adapt to the developer's language):
+
+```js
+app.post('/game-session', requireLogin, async (req, res) => {
+  const r = await fetch(`${process.env.MINIGAME_HOST}/api/v1/sessions`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + process.env.MINIGAME_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ gameId: process.env.MINIGAME_GAME_ID, playerId: String(req.user.id), displayName: req.user.name }),
+  });
+  res.status(r.status).json(await r.json());
+});
+```
+
+**Never** put the API key in front-end code, a mobile app, a repository or a log. Environment variable only.
+
+#### Step 2 — show the game
+
+- Web: `<iframe src="PLAY_URL" width="480" height="760" style="border:0" allow="autoplay; fullscreen">` or the SDK `<script src="{{HOST}}/sdk/minigames.js">` with `MiniGames.mount('#game', { sessionEndpoint: '/game-session', onEvent })`.
+- Flutter/Android/iOS: a WebView loading `playUrl`. Flutter: `webview_flutter`, add a JavaScript channel named `MiniGames` to receive events.
+- Create a **new session each time the player opens the game**. Never cache a `playUrl` for more than a few minutes.
+
+Events the game sends to the page/app (`{ source: "minigames", type, data }`): `login`, `ready`, `round`, `needCoins`, `exit`.
+On `needCoins` open the developer's coin shop. On `exit` close the game.
+
+#### Step 3 — coins (skip for demo wallets)
+
+**Managed wallet** (switch the game to *Managed by my server* in the dashboard first; otherwise `409 wallet_not_enabled`):
+
+```http
+POST /api/v1/games/{gameId}/players/{playerId}/credit   { "amount": 100000, "reference": "order-1001", "note": "bought 100k" }
+POST /api/v1/games/{gameId}/players/{playerId}/debit    { "amount": 40000,  "reference": "cashout-77" }
+GET  /api/v1/games/{gameId}/players/{playerId}           → { playerId, displayName, balance, ... }
+GET  /api/v1/games/{gameId}/players/{playerId}/transactions?limit=50&before=<nextBefore>
+→ credit/debit 200: { "playerId", "balance", "transactionId", "duplicate": false }
+```
+
+Rules that matter:
+- `reference` is **required** and must be **unique per operation** (use the developer's order id / payout id). Repeating a call with the **same reference returns the first answer** (`"duplicate": true`) and never moves coins twice. Reusing a reference for a *different* operation → `409 reference_conflict`.
+- **Retry on timeouts and 5xx with the same reference.** Do not retry other 4xx.
+- `debit` with too little money → `402 insufficient_balance` (the answer includes the current `balance`), nothing moves.
+- Credit **after** the developer's payment is confirmed, never before.
+- A player is created automatically by `credit`, and by creating a session.
+
+**Seamless wallet** (switch the game to *Seamless*; set the wallet address on the *API key & webhooks* page first): the developer implements **one** HTTPS endpoint. See [`prompts/integrate-seamless-wallet.md`](prompts/integrate-seamless-wallet.md) for the exact protocol. Key points: verify the signature; treat `reference` as an idempotency key; answer `200 {"balance": <integer>}`; for a debit with too little money answer `402 {"code":"insufficient_balance"}`; `rollback` undoes the debit with the same `reference` **only if it was applied**.
+
+#### Step 4 — webhooks (optional but recommended)
+
+Set the address and copy the **signing secret** on the *API key & webhooks* page. Every request has headers `X-Minigame-Event`, `X-Minigame-Delivery`, `X-Minigame-Timestamp`, `X-Minigame-Signature` and a JSON body `{ id, type, createdAt, gameId, livemode, data }`.
+
+**Verify like this (exactly):** `expected = "v1=" + hex( HMAC_SHA256( secret, timestamp + "." + rawBody ) )`. Use the **raw** body (before JSON parsing), compare with a **constant-time** function, reject timestamps older than 5 minutes, answer **2xx** quickly. Store `id` and ignore repeats. Event types: `round.settled`, `player.needs_coins`, `wallet.operation_failed`, `webhook.test`. Retries: 10 s, 1 min, 5 min, 30 min, 2 h, 6 h.
+
+#### Step 5 — rooms and leaderboards (optional)
+
+```http
+POST /api/v1/games/{gameId}/rooms  { "key": "vip", "name": "VIP", "capacity": 20, "auto": false, "overrides": { "chips": [100000,500000,1000000], "maxPerTarget": 2000000 } }
+GET  /api/v1/games/{gameId}/rooms                      → rooms with `online` player counts (for a lobby screen)
+POST /api/v1/sessions { ..., "room": "vip" }            → 409 room_full when full; "auto" = first room with space, a new copy is opened when all are full
+GET  /api/v1/games/{gameId}/leaderboard?room=vip&period=week&metric=winnings&limit=10&playerId=user-8841
+```
+`period`: `day|week|month|all` (UTC). `metric`: `winnings|net|wagered|biggest_win`. Rankings are cached 5 seconds.
+
+### 5. Common mistakes (check your code for each)
+
+1. API key in front-end/mobile code or in a URL. → Backend only.
+2. Creating a session for a user who is not logged in to the developer's system.
+3. Re-using one `playUrl` for many players or for hours.
+4. Missing or non-unique `reference` on `credit`/`debit`; generating a new random reference on every retry (this defeats idempotency).
+5. Treating `duplicate: true` as an error. It is a success.
+6. Verifying the webhook signature against re-serialized JSON instead of the raw body; comparing with `==`; skipping the timestamp check.
+7. Doing heavy work before answering the webhook (answer 2xx first, process afterwards).
+8. Using the live key with a test game (or the reverse) → `wrong_environment`.
+9. Sending decimals or strings as `amount`.
+10. Forgetting that a player belongs to **one game**: the same user in two games has two balances.
+
+### 6. How to verify the integration (give the developer these checks)
+
+1. `GET /api/v1/games` with the key returns the game. (401 → wrong key.)
+2. Create a session; open `playUrl` in a browser: the game loads **without a name prompt** and shows the player's `displayName`.
+3. (Managed) `credit` 100000 → the open game shows the new balance within ~2 seconds; repeat the same call → `duplicate: true`, balance unchanged.
+4. (Webhook) press *Send test* in the dashboard → delivery shows `delivered`; tamper with the body in a test → your endpoint answers 400.
+5. Play a round → a `round.settled` webhook arrives with the player's `bet` and `win`.
+
+### 7. Where the truth is
+
+`/openapi.json` (machine-readable contract) · `/docs/` (human guide) · [`glossary.md`](glossary.md) · prompts in [`prompts/`](prompts).
+
+
+# Part 2: Glossary
+
+
+Exact meanings. Use these words in code, docs and prompts.
+
+| Term | Meaning |
+|---|---|
+| **Buyer / client** | The company that buys a game and embeds it. Has a dashboard account. |
+| **Player** | An end user of the buyer's app. Exists **inside one game**. Identified by the buyer's own id (`playerId`, stored as `externalId`). |
+| **API key** | Secret `mgs_...` of an account. Server only. Works for all of the account's live games. Hashed at rest. |
+| **Test key** | Secret `mgs_test_...`. Works only with games marked *Test game*. |
+| **Game ID** | `lic_...`. Identifies one purchased game (not secret). Called "license" in older code and in some URLs (`/api/licenses/:id`). |
+| **Game** | A purchased, customizable copy of a game type (for example Lucky Wheel 77). Its configuration holds only the buyer's overrides; defaults live in the catalog. |
+| **Session** | A 15-minute token + `playUrl` created by the buyer's server for one player. |
+| **Player token** | The token the game uses after the session is exchanged (12 hours). |
+| **Room** | A separate round clock, pot, history and ranking inside a game. Every game has an implicit room `main`. Capacity is a soft limit. |
+| **Round** | One betting → spin → result cycle of a room. Its outcome is drawn when it is created and hidden until betting closes. |
+| **Settlement / payout** | Paying a finished round: marking bets, crediting winners (batched, resumable), writing results, queueing the webhook. |
+| **Ledger** | Immutable list of every balance change (`delta`, `balanceAfter`, `kind`, optional `reference`). The only place money moves. |
+| **Reference** | A unique id (per game) for one money operation. Repeating it returns the first result. |
+| **Wallet mode** | `demo` (starting balance + free refill), `managed` (buyer's server calls credit/debit), `seamless` (coins stay in the buyer's system; we call it). |
+| **Guest login** | Per-game switch that lets players type their own name (demo only). Off by default. |
+| **Webhook** | A signed POST from us to the buyer's server (`round.settled`, ...). Stored first, retried with backoff. |
+| **Seamless request** | A signed POST from us to the buyer's wallet endpoint: `ping`, `balance`, `debit`, `credit`, `rollback`. |
+| **Hub** | The in-memory live state of active rooms, pushed to players over WebSocket (`/ws`). A cache of the database, never the truth. |
+| **Manifest** | A game's declaration of what a buyer may customize; the dashboard forms and server validation are generated from it. |
+| **Asset slot** | One customizable image/SVG/video/audio of a game. |
+| **Live / test game** | `mode` of a game. Test games answer only to the test key and send `livemode: false` webhooks. |
+| **Preview player** | A player created from the dashboard preview. Hidden from statistics, rankings and webhooks. |
+
+
+# Part 3: Ready-made task prompts
+
+The developer may paste one of these (filled in) together with this file.
+
+## Prompt: create play sessions from my backend
+
+Copy everything below the line, replace the `<...>` parts, and paste it into your AI assistant together with `{{{HOST}}}/llms-full.txt`.
+
+---
+
+You are an expert backend developer. Read the attached MiniGame Studio integration playbook (llms-full.txt) completely first. Do not invent endpoints or fields.
+
+**My stack:** `<for example: Node.js 20 with Express and PostgreSQL / Python 3.12 with Django / Java 17 with Spring Boot / PHP 8 with Laravel>`
+**How my users log in:** `<for example: session cookie / JWT in the Authorization header / OAuth>`
+**Where the user id and name are:** `<for example: req.user.id and req.user.name>`
+**Game host:** `<https://our-host>` · **Game ID:** `<lic_...>` · the API key is in the environment variable `MINIGAME_API_KEY`.
+
+**Task:** add ONE endpoint `POST /game-session` to my backend that:
+1. requires my existing login (answer 401 when the caller is not logged in);
+2. calls `POST <host>/api/v1/sessions` with `gameId`, `playerId` (my user id as a string), `displayName`, and `room: "auto"`;
+3. returns the JSON answer's `playUrl` to my front-end;
+4. handles errors: log our `code`, return a friendly 502/503 to the user, never expose the API key or our raw error to the browser;
+5. has a timeout of 10 seconds and no retry on 4xx.
+
+Then add the front-end part for `<web (iframe or the SDK) / Flutter WebView / Android / iOS>` that calls my endpoint when the player taps "Play" and shows the game. Handle the `exit` and `needCoins` events.
+
+Rules: the API key stays on the server (environment variable). Create a new session every time the game is opened. Give me the complete code, where each file goes, the environment variables to set, and a 3-step test I can run.
+
+
+## Prompt: sell coins with the managed wallet (credit / debit)
+
+Copy everything below the line, replace the `<...>` parts, and paste it into your AI assistant together with `{{{HOST}}}/llms-full.txt`.
+
+---
+
+You are an expert backend developer. Read the attached MiniGame Studio playbook (llms-full.txt) completely first. Do not invent endpoints or fields.
+
+**My stack:** `<language, framework, database>` · **Game host:** `<https://our-host>` · **Game ID:** `<lic_...>` · API key in `MINIGAME_API_KEY`.
+**My coin purchase flow:** `<for example: Stripe webhook "payment_intent.succeeded" creates an Order row; 1 EUR = 1000 coins>`
+**My cash-out flow:** `<for example: admin approves a payout request, then I remove the coins>` (or "none")
+
+The game is switched to *Managed by my server* in the dashboard.
+
+**Task:** implement in my backend:
+1. `creditCoins(userId, amount, orderId)`: calls `POST /api/v1/games/{gameId}/players/{userId}/credit` with `reference = "order-" + orderId`. It must be **idempotent and retry-safe**: retry up to 5 times with growing pauses on network errors and 5xx **using the same reference**; do not retry other 4xx; treat `duplicate: true` as success. Call it only after my payment is confirmed. Store the returned `transactionId` with my order.
+2. `debitCoins(userId, amount, payoutId)` for cash-outs, with `reference = "payout-" + payoutId`; handle `402 insufficient_balance` (show the player's real balance from the error) and `409 reference_conflict`.
+3. A function that reads the player's balance and history (`GET .../players/{id}` and `.../transactions`) for my admin screen, with paging via `nextBefore`.
+4. Handling for the game's `needCoins` event on my front-end: open my coin shop.
+5. Unit tests with a fake of the HTTP calls proving: the same order is never credited twice; a timeout then success credits once; `402` moves nothing.
+
+Rules: `amount` is a whole number (no decimals, no strings). `reference` must be unique per operation and **stable across retries** (derive it from my order/payout id, never from a random value generated per attempt). Log failures with our `code`.
+
+
+## Prompt: keep the coins in my own system (seamless wallet)
+
+Copy everything below the line, replace the `<...>` parts, and paste it into your AI assistant together with `{{{HOST}}}/llms-full.txt`.
+
+---
+
+You are an expert backend developer. Read the attached MiniGame Studio playbook (llms-full.txt) completely first.
+
+**My stack:** `<language, framework, database>` · my coin balances live in `<table/collection>` · player id = my user id.
+The webhook signing secret is in `MINIGAME_WEBHOOK_SECRET`. The game is switched to *Seamless (my wallet)* and my endpoint address is saved on the dashboard page "API key & webhooks".
+
+**Protocol you must implement (one HTTPS endpoint, POST, JSON):**
+
+Request headers: `X-Minigame-Event` (`wallet.<type>`), `X-Minigame-Delivery` (= `reference`), `X-Minigame-Timestamp` (unix seconds), `X-Minigame-Signature` (`v1=` + lowercase hex of HMAC-SHA256(secret, `<timestamp>.<raw body>`)).
+Request body: `{ "type": "ping|balance|debit|credit|rollback", "gameId": "lic_...", "livemode": true, "playerId": "<my user id>", "amount": 30000, "reference": "<unique>", "note": "Round 1042" }`.
+
+| type | what you do | answer |
+|---|---|---|
+| `ping` | nothing | `200 {"ok":true}` |
+| `balance` | read the player's balance | `200 {"balance": <integer>}` |
+| `debit` | take `amount` from the player **atomically, only if enough** | `200 {"balance": <new balance>}`; not enough: `402 {"code":"insufficient_balance"}` |
+| `credit` | add `amount` (a win) | `200 {"balance": <new balance>}` |
+| `rollback` | undo the debit with the same `reference` **only if you applied it**; otherwise do nothing and remember that this debit must never be applied later | `200 {"balance": <balance>}` |
+
+**Idempotency (critical):** store every handled `reference`. If a `debit` or `credit` arrives again with a known `reference`, answer **exactly the same as the first time** and change nothing. Use a unique index on `reference` and a database transaction so two simultaneous identical requests cannot both apply.
+**Errors:** other 4xx = "refused for good"; 5xx or no answer within 5 seconds = "unknown": we will send a `rollback` and retry credits for about a day, so your handlers must be safe to repeat.
+
+**Task:**
+1. Implement the endpoint (verify the signature on the raw body, reject timestamps older than 5 minutes with 400).
+2. Implement `debitIfEnough` atomically (for SQL: `UPDATE ... SET balance = balance - :a WHERE id = :id AND balance >= :a`; check affected rows).
+3. Implement the idempotency table and the rollback rule above.
+4. Write tests: duplicate debit applies once; concurrent identical debits apply once; debit with too little money returns 402 and changes nothing; rollback of an unknown reference changes nothing and a later debit with that reference is refused or ignored; bad signature returns 400.
+5. Tell me how to try it with the dashboard's "Send test" button for the wallet address.
+
+
+## Prompt: receive and verify webhooks
+
+Copy everything below the line, replace the `<...>` parts, and paste it into your AI assistant together with `{{{HOST}}}/llms-full.txt`.
+
+---
+
+You are an expert backend developer. Read the attached MiniGame Studio playbook (llms-full.txt) completely first.
+
+**My stack:** `<language, framework, database>` · the signing secret is in `MINIGAME_WEBHOOK_SECRET` · public address of the endpoint: `<https://my-site/minigame-webhook>`.
+
+**Task:** implement the webhook endpoint:
+1. Read the **raw** request body (before any JSON parsing). Compute `expected = "v1=" + hex(HMAC_SHA256(secret, X-Minigame-Timestamp + "." + rawBody))`. Compare to `X-Minigame-Signature` with a constant-time comparison. Reject (400) on mismatch or when the timestamp is more than 300 seconds from now.
+2. Parse `{ id, type, createdAt, gameId, livemode, data }`. Insert `id` into a table with a unique index first; if it already exists, answer 200 without doing anything (deliveries can repeat).
+3. Answer **2xx immediately**; do the work (database updates, emails) in a background job.
+4. Handle these types: `round.settled` (`data: { game, room, round, result[], playerCount, truncated, players: [{ playerId, bet, win }] }`) → record each player's result in my database; `player.needs_coins` (`data: { playerId, room, balance }`) → create a "buy coins" nudge for that user; `wallet.operation_failed` (`data: { type, playerId, amount, reference, error }`) → alert my operations team; `webhook.test` → log it. Ignore unknown types with 200.
+5. Ignore events with `livemode: false` in production (or route them to a test log).
+6. Write tests: valid signature accepted; changed body rejected; old timestamp rejected; duplicate `id` processed once.
+
+Show me how to try it with the dashboard's "Send test" button and where the delivery log is.
+
+
+## Prompt: rooms, a lobby and leaderboards
+
+Copy everything below the line, replace the `<...>` parts, and paste it into your AI assistant together with `{{{HOST}}}/llms-full.txt`.
+
+---
+
+You are an expert full-stack developer. Read the attached MiniGame Studio playbook (llms-full.txt) completely first.
+
+**My stack:** `<backend + front-end>` · **Game host:** `<https://our-host>` · **Game ID:** `<lic_...>` · API key in `MINIGAME_API_KEY`.
+**What I want:** `<for example: a beginner table (chips 1k-10k, up to 50 players, auto-placed) and a VIP table (chips 100k-1M, up to 20 players, chosen from a lobby); a weekly top-10 ranking screen>`
+
+**Task:**
+1. A one-time script that creates my rooms with `POST /api/v1/games/{gameId}/rooms` (key, name, `capacity`, `auto`, `overrides: { chips, maxPerTarget, timing }`) and is safe to run again (`409 room_exists` is fine).
+2. A lobby endpoint that returns `GET /api/v1/games/{gameId}/rooms` to my front-end (names, `online`, `capacity`) and a lobby screen where the player picks a room.
+3. Extend my `/game-session` endpoint to accept a room key and pass it as `room` (default `"auto"`). Handle `409 room_full` by showing "Table is full, pick another" and `409 no_room_available` by retrying later.
+4. A ranking screen using `GET /api/v1/games/{gameId}/leaderboard?period=week&metric=winnings&limit=10&playerId=<current user>`; show the list and the current player's own `me.rank` when they are not in the top 10. Cache the answer on my side for 5 seconds.
+
+Notes you must respect: capacity is a *soft* limit; "auto" fills the first room with space and opens a copy when all are full; a room can only be deleted when empty (`409 room_busy`); the `main` room cannot be deleted.
+
+
+## Prompt: review an integration I already wrote
+
+Copy everything below the line and paste it into your AI assistant together with `{{{HOST}}}/llms-full.txt` and your code.
+
+---
+
+You are a careful senior reviewer. Read the attached MiniGame Studio playbook (llms-full.txt) completely. Then review the code I attach (my session endpoint, wallet calls, webhook receiver, front-end embedding).
+
+Check each item and answer **PASS / FAIL / NOT APPLICABLE** with the exact file and line for every FAIL and a corrected snippet:
+
+1. The API key is only on the server (environment variable); not in front-end code, mobile app, repository, logs or URLs.
+2. The session endpoint checks my own login before asking for a session; one new session per game open; `playUrl` is never cached for long or shared between players.
+3. `playerId` is a stable id (same person → same id), allowed characters only, never a secret.
+4. Every `credit`/`debit` has a `reference` that is unique per operation and **stable across retries**; retries only on network errors and 5xx; `duplicate: true` treated as success; `402`, `409 reference_conflict`, `409 wallet_not_enabled` handled.
+5. Amounts are whole numbers.
+6. Webhook: signature verified on the **raw** body with a constant-time comparison; timestamp checked (≤ 5 minutes); `id` deduplicated; answers 2xx quickly; unknown event types ignored; `livemode` respected.
+7. Seamless wallet (if used): signature verified; `reference` idempotency with a unique index; `debit` atomic with a balance check; `rollback` only undoes an applied debit; answers within 5 seconds.
+8. The front-end handles `exit` and `needCoins`; the WebView/iframe allows autoplay and fullscreen.
+9. Errors are logged with our `code`; users never see raw errors.
+10. Live vs test: the right key for the right game (`wrong_environment`).
+
+End with the three most important fixes in priority order.
+
+
+# Part 4: API reference (generated from {{HOST}}/openapi.json)
+
+### POST /api/v1/sessions
+Create a 15-minute play link for one player.
+Request body:
+- `gameId` (string, required): lic_...
+- `playerId` (string): YOUR id for the person. Required unless the game allows guest login. [pattern ^[A-Za-z0-9_.:@-]{1,64}$]
+- `displayName` (string) [max length 40]
+- `avatarUrl` (string): https only
+- `room` (string): "auto" (default) or the key of a room.
+Responses:
+- 200: The session
+- 400: Invalid or missing field (player_id_required, invalid_player_id, ...)
+- 401: Missing or wrong API key (code invalid_api_key)
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+- 409: room_full or no_room_available
+
+### GET /api/v1/games
+The games this key can open.
+Responses:
+- 200: Games
+- 401: Missing or wrong API key (code invalid_api_key)
+
+### GET /api/v1/games/{gameId}/players/{playerId}
+A player's balance.
+Parameters:
+- `gameId` (path, required)
+- `playerId` (path, required)
+Responses:
+- 200: The player
+- 401: Missing or wrong API key (code invalid_api_key)
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+
+### POST /api/v1/games/{gameId}/players/{playerId}/credit
+Add coins (managed wallet). Creates the player if needed. The same `reference` always gives the same answer and never moves coins twice.
+Parameters:
+- `gameId` (path, required)
+- `playerId` (path, required)
+Request body:
+- `amount` (integer, required) [min 1, max 1000000000000]
+- `reference` (string, required): Unique per operation (e.g. your order id). [pattern ^[A-Za-z0-9_.:@-]{1,100}$]
+- `note` (string) [max length 200]
+- `displayName` (string): credit only
+Responses:
+- 200: Done (or a repeat of an earlier identical call: duplicate=true)
+- 400: invalid_amount, reference_required, ...
+- 401: Missing or wrong API key (code invalid_api_key)
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+- 409: wallet_not_enabled or reference_conflict
+
+### POST /api/v1/games/{gameId}/players/{playerId}/debit
+Remove coins, e.g. a cash-out (managed wallet).
+Parameters:
+- `gameId` (path, required)
+- `playerId` (path, required)
+Request body:
+- `amount` (integer, required) [min 1, max 1000000000000]
+- `reference` (string, required): Unique per operation (e.g. your order id). [pattern ^[A-Za-z0-9_.:@-]{1,100}$]
+- `note` (string) [max length 200]
+- `displayName` (string): credit only
+Responses:
+- 200: Done
+- 400: invalid_amount, reference_required, ...
+- 401: Missing or wrong API key (code invalid_api_key)
+- 402: insufficient_balance (includes the current balance); nothing moved
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+- 409: wallet_not_enabled or reference_conflict
+
+### GET /api/v1/games/{gameId}/players/{playerId}/transactions
+A player's coin history, newest first, including bets and wins made by the game.
+Parameters:
+- `gameId` (path, required)
+- `playerId` (path, required)
+- `limit` (query)
+- `before` (query): Pass `nextBefore` of the previous page
+Responses:
+- 200: A page of the ledger
+- 401: Missing or wrong API key (code invalid_api_key)
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+
+### GET /api/v1/games/{gameId}/rooms
+Rooms of a game with the players online in each.
+Parameters:
+- `gameId` (path, required)
+Responses:
+- 200: Rooms
+- 401: Missing or wrong API key (code invalid_api_key)
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+
+### POST /api/v1/games/{gameId}/rooms
+Create a room.
+Parameters:
+- `gameId` (path, required)
+Request body:
+- `key` (string): create only [pattern ^[a-z0-9][a-z0-9_-]{0,31}$]
+- `name` (string) [max length 40]
+- `capacity` (integer|null): Soft limit of players at once; null = unlimited [min 1]
+- `auto` (boolean): Include in automatic placement
+- `overrides` (object)
+  - `title` (string)
+  - `chips` (array)
+  - `maxPerTarget` (integer)
+  - `timing` (object)
+    - `betSeconds` (integer) [min 8, max 120]
+    - `spinSeconds` (integer) [min 3, max 15]
+    - `resultSeconds` (integer) [min 3, max 20]
+Responses:
+- 200: The room
+- 400: invalid_room
+- 401: Missing or wrong API key (code invalid_api_key)
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+- 409: room_exists or too_many_rooms
+
+### PUT /api/v1/games/{gameId}/rooms/{key}
+Change a room.
+Parameters:
+- `gameId` (path, required)
+- `key` (path, required)
+Request body:
+- `key` (string): create only [pattern ^[a-z0-9][a-z0-9_-]{0,31}$]
+- `name` (string) [max length 40]
+- `capacity` (integer|null): Soft limit of players at once; null = unlimited [min 1]
+- `auto` (boolean): Include in automatic placement
+- `overrides` (object)
+  - `title` (string)
+  - `chips` (array)
+  - `maxPerTarget` (integer)
+  - `timing` (object)
+    - `betSeconds` (integer) [min 8, max 120]
+    - `spinSeconds` (integer) [min 3, max 15]
+    - `resultSeconds` (integer) [min 3, max 20]
+Responses:
+- 200: The room
+- 400: invalid_room
+- 401: Missing or wrong API key (code invalid_api_key)
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+
+### DELETE /api/v1/games/{gameId}/rooms/{key}
+Delete an empty room (not "main").
+Parameters:
+- `gameId` (path, required)
+- `key` (path, required)
+Responses:
+- 200: Deleted
+- 401: Missing or wrong API key (code invalid_api_key)
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+- 409: room_busy or room_protected
+
+### GET /api/v1/games/{gameId}/leaderboard
+A ranking to show in your own app.
+Parameters:
+- `gameId` (path, required)
+- `room` (query): Only this room (default: the whole game)
+- `period` (query) one of day, week, month, all
+- `metric` (query) one of winnings, wagered, biggest_win, net
+- `limit` (query)
+- `playerId` (query): Also return this player's own rank in `me`
+Responses:
+- 200: The ranking (cached for 5 seconds)
+- 400: invalid_period or invalid_metric
+- 401: Missing or wrong API key (code invalid_api_key)
+- 403: Wrong environment: a test game needs the test key and a live game the live key (code wrong_environment)
+- 404: Game or player not found
+
+## Messages we send to YOU
+
+### roundSettled: A round finished and was paid
+Sent to your webhook address. Verify `X-Minigame-Signature` (v1= + hex HMAC-SHA256 of "<X-Minigame-Timestamp>.<raw body>" with your signing secret). Answer any 2xx. Retries: 10 s, 1 min, 5 min, 30 min, 2 h, 6 h.
+Body:
+- `id` (string): Unique: ignore repeats
+- `type` (string)
+- `createdAt` (string)
+- `gameId` (string|null)
+- `livemode` (boolean)
+- `data` (object)
+- `data` (object)
+  - `game` (string)
+  - `room` (string)
+  - `round` (integer)
+  - `result` (array)
+  - `playerCount` (integer)
+  - `truncated` (boolean)
+  - `players` (array)
+    - `playerId` (string)
+    - `bet` (integer)
+    - `win` (integer)
+
+### playerNeedsCoins: A player tried to bet with too few coins (managed or seamless wallet), at most once per player and 5 minutes
+Body:
+- `id` (string): Unique: ignore repeats
+- `type` (string)
+- `createdAt` (string)
+- `gameId` (string|null)
+- `livemode` (boolean)
+- `data` (object)
+- `data` (object)
+  - `playerId` (string)
+  - `room` (string)
+  - `balance` (integer)
+
+### walletOperationFailed: A stored seamless-wallet operation (credit or rollback) could not be delivered after all retries
+Body:
+- `id` (string): Unique: ignore repeats
+- `type` (string)
+- `createdAt` (string)
+- `gameId` (string|null)
+- `livemode` (boolean)
+- `data` (object)
+- `data` (object)
+  - `type` (string) [one of credit, rollback]
+  - `playerId` (string)
+  - `amount` (integer)
+  - `reference` (string)
+  - `error` (string)
+
+### webhookTest: The "Send test" button
+Body:
+- `id` (string): Unique: ignore repeats
+- `type` (string)
+- `createdAt` (string)
+- `gameId` (string|null)
+- `livemode` (boolean)
+- `data` (object)
+
+### seamlessWallet: Seamless wallet request (YOU implement this endpoint)
+One address receives all of these, signed like webhooks. `type` is `ping`, `balance`, `debit` (a stake), `credit` (a win) or `rollback` (undo the debit with the same `reference`, if it was applied; a no-op otherwise). `reference` is an idempotency key: answer a repeat with the first answer. Answer 200 `{ "balance": <integer> }`; for a debit with too little money answer 402 `{ "code": "insufficient_balance" }`. Other 4xx = refused for good; 5xx or no answer within 5 seconds = unknown (we roll back and retry).
+Body:
+- `type` (string, required) [one of ping, balance, debit, credit, rollback]
+- `gameId` (string|null)
+- `livemode` (boolean)
+- `playerId` (string)
+- `amount` (integer)
+- `reference` (string, required)
+- `note` (string)
+
+## Error shape
+Every error is `{ "error": "message", "code": "machine_code" }`.
+

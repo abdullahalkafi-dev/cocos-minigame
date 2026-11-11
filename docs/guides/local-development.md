@@ -33,6 +33,8 @@ Use a different database name per environment (`minigame_dev`, `minigame_studio`
 | `npm run typecheck -w server` / `-w dashboard` | Type checks |
 | `npx tsc --noEmit -p cocos` | Type check the game scripts without opening Creator |
 | `npm test` | Server tests (see [testing](testing.md)) |
+| `npm run build:ai-docs` | Regenerates `/llms.txt`, `/llms-full.txt`, `/postman.json` and `docs/ai` copies from `docs/ai` and the OpenAPI definition (CI checks they are current) |
+| `npm run loadtest -w server -- --players 1000 --seconds 70` | Load test with bot players (see [load-testing](../operations/load-testing.md)) |
 | `npm run seed` | Demo data: two differently customized games with players and settled rounds (takes about a minute; **never run it against production**) |
 
 ## Environment variables
@@ -46,6 +48,8 @@ Use a different database name per environment (`minigame_dev`, `minigame_studio`
 | `DATA_DIR` | `server/data` | Signing secret and uploaded images. Relative paths are relative to the repository root |
 | `SESSION_SECRET` | generated into `DATA_DIR/secret.key` | Token signing secret (set it explicitly when you run several instances) |
 | `HOST_PORT` | `3000` | docker compose only: port published on 127.0.0.1 |
+| `METRICS_TOKEN` | empty | Enables `GET /api/metrics` (header `x-metrics-token`) |
+| `ALLOW_PRIVATE_WEBHOOKS` | empty | `1` lets webhook and wallet addresses point to local networks (development) |
 
 `.env` is read from the repository root and is git-ignored. Never commit it.
 

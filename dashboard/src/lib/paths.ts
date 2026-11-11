@@ -1,4 +1,4 @@
-export type GameTab = 'customize' | 'integrate' | 'players' | 'settings';
+export type GameTab = 'customize' | 'integrate' | 'players' | 'rooms' | 'settings';
 
 /**
  * Address of a game's page in the dashboard. The dashboard is a static export, so the game id travels in the

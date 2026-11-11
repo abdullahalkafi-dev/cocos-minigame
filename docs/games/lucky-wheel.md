@@ -11,7 +11,7 @@ Use this when you present the demo to your client. Each section has a **plain-la
 1. **Betting** (default 20 s): a countdown shows in the wheel hub. Players tap a bet box with the chip they selected. "Repeat Bet" re-places the previous round.
 2. **Spin** (default 6 s): betting closes, the wheel spins and lands on the server-decided wedge. A late joiner sees the wheel at the correct position, because the angle is computed from the server clock.
 3. **Result** (default 6 s): the wedge and winning boxes light up, the history ribbon updates, winners are paid, and a "Good luck" popup lists the top winners of the round.
-4. The next round starts on its own. The clock is **shared by every player of the same license**.
+4. The next round starts on its own. The clock is **shared by every player of the same room** (a game has one room by default; the client can create more: small tables, a VIP table, one huge event).
 
 Extra: when the *lucky* option (77) hits, there is a configurable chance that a second option is paid in the same round (the "multiple awards" rule).
 
@@ -52,6 +52,8 @@ A buyer who uploads nothing gets the default artwork. A buyer can replace one as
 - **Runtime media loader** (`cocos/assets/scripts/core/Media.ts`): one function, `spawnMedia(slot)`, shows any slot as a sprite. SVG is rasterized sharply at any size, a sprite sheet steps its frame rectangle at the chosen FPS, and a video is copied into a texture every frame (muted, inline, so it autoplays on phones; WebM keeps transparency).
 - **Shared round clock** (`server/src/modules/lucky-wheel`): a round is created lazily with its outcome already drawn (crypto RNG) and hidden from clients until betting closes. Payouts are credited when the spin ends, idempotently, so a refresh or a second tab can never pay twice. Every settled round is also written to the buyer's results table, so the dashboard needs no game-specific code.
 - **Server-authoritative**: bets are validated and deducted on the server; clients only render the state. The odds are never sent to the game.
+- **Live push**: the server pushes the room state over WebSocket (about once a second, and at once when a bet, a payout or a wallet credit changes something for that player), with HTTP polling as the automatic fallback.
+- **Rooms and wallets**: each room has its own clock, pot and ranking, with optional presets (chips, max bet, timing). Coins can live in our database (demo, managed) or in the client's own system (seamless).
 - **Responsive**: fixed 1280-unit design height, scaled to fit narrow phones; the top bar and bottom controls anchor to the screen edges.
 - **Host messaging**: `postMessage` for websites and a JavaScript channel (`MiniGames`) for Flutter/WebViews: `login`, `ready`, `round`, `exit`.
 - **Size**: the engine is trimmed to 2D modules only (about 1.9 MB, about 430 KB over the wire with Brotli); artwork is optimized WebP.

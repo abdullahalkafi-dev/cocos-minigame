@@ -25,12 +25,15 @@ server/src/
     players/           end players of a game
     ledger/            every balance change (the only place money moves)
     wallet/            the client's wallet API: credit, debit, balance, transactions (idempotent)
+    seamless/          the seamless wallet: signed requests to the client's own wallet endpoint, stored operations, retries
     webhooks/          signed notifications to the client's server: outbox, delivery, retries, worker
+    rooms/             rooms of a game (capacity, presets, automatic placement, presence)
+    leaderboards/      rankings per game or room for a day, week, month or all time
     results/           per-round results for the dashboard, statistics, CSV
     sessions/          server-to-server API: list games, create play sessions for a client-named player
     play/              what every game needs: bootstrap, player login, auth of the running game
-    lucky-wheel/       the wheel game: rules engine, rounds, bets, settlement, worker
-    system/            health check and static files (games, sdk, docs, dashboard, uploads)
+    lucky-wheel/       the wheel game: rules engine, rounds, bets, batched settlement, the live hub and WebSocket (see realtime.md), workers
+    system/            health, metrics, OpenAPI (/openapi.json), AI bundles (/llms.txt), static files (games, sdk, docs, dashboard, uploads)
   scripts/             one-off tools (migrate-from-sqlite.ts)
   test/                shared test harness and integration tests
 ```
