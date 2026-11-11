@@ -4,7 +4,8 @@ const [base, key, gameId, loads = '4'] = process.argv.slice(2);
 let bad = 0;
 for (let n = 0; n < +loads; n++) {
   const g = await open((await mintSession(base, key, gameId, 'chip_tester' + n)) + '&debug=1', { w: 390, h: 844, scale: 1 });
-  await sleep(8000);
+  for (let k = 0; k < 150; k++) { const ready = await g.page.evaluate(() => !!window.__game && window.__game.chipNodes && window.__game.chipNodes.length === window.__game.chips.length && window.__game.chipNodes.every(Boolean)); if (ready) break; await sleep(200); }
+  await sleep(1500);
   const info = await g.page.evaluate(() => { const gm = window.__game; return gm.chipNodes.map(c => c.node.name).join(','); });
   // chip centres (stage x) from the game itself
   const xs = await g.page.evaluate(() => window.__game.chipNodes.map(c => c.node.position.x));
