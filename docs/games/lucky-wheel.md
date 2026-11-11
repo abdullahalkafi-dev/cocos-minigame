@@ -66,7 +66,7 @@ A buyer who uploads nothing gets the default artwork. A buyer can replace one as
 | Buyer dashboard | Next.js 15 + React 19 (static export): asset studio, live phone preview, players and results |
 | Embed library | `sdk/minigames.js` (about 4 KB, no dependencies) |
 | Security | One secret API key per account (hashed at rest, rotatable) plus a game ID per game, 15-minute signed session tokens, players named by the client's own system (never by the player), an optional managed wallet with idempotent credits and debits, signed webhooks, rate limits, optional allowed-site list (`frame-ancestors`), upload validation, locked-down upload serving (CSP `sandbox`, `nosniff`) |
-| Tests | 16 automated server tests (identity, wallet and webhooks included; round flow and exact payout math, ledger adds up to the balance, parallel bets and settlement, 300,000-round odds simulation, API key and game ID isolation and rotation, account and store, customization validation, media upload safety) plus headless-browser end-to-end scripts in `scripts/` |
+| Tests | 22 automated server tests (identity, wallets, webhooks, rooms, WebSocket push, seamless wallet and the OpenAPI contract included; round flow and exact payout math, ledger adds up to the balance, parallel bets and settlement, 300,000-round odds simulation, API key and game ID isolation and rotation, account and store, customization validation, media upload safety) plus headless-browser end-to-end scripts in `scripts/` |
 
 ## Honest limits of this demo
 

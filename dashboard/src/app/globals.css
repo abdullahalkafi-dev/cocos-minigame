@@ -203,3 +203,5 @@ th.sortable { cursor: pointer; user-select: none; } th.sortable:hover { color: v
 .hero-art img.wheel-fallback { width: min(88%, 440px); }
 
 .side { overflow: hidden; } .side-foot { grid-template-columns: minmax(0, 1fr); min-width: 0; } .side-foot > * { min-width: 0; } .user-chip .small { white-space: nowrap; }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
