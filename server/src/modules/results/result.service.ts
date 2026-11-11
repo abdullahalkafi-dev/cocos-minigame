@@ -12,6 +12,7 @@ export function createResultService(d: { repo: ResultRepository; players: Player
   const names = async (ids: string[]) => new Map((await d.players.byIds([...new Set(ids)])).map(p => [p._id, p]));
   return {
     record: (recs: ResultRec[], session?: ClientSession) => d.repo.insertMany(recs, session),
+    existingIds: (ids: string[], session?: ClientSession) => d.repo.existingIds(ids, session),
 
     /** Per-game totals shown on the "My games" cards. */
     async statsForGames(gameIds: string[]) {

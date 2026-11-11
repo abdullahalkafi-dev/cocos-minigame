@@ -15,7 +15,9 @@ export interface GameRec {
   /** Players may type their own name (demo, preview). Off by default: the client's server names the player. */
   guestLogin?: boolean;
   /** demo: starting balance + free refill. managed: balance only changes through the wallet API. */
-  walletMode?: 'demo' | 'managed';
+  walletMode?: 'demo' | 'managed' | 'seamless';
+  /** A test game only answers to the test API key (mgs_test_...), so test traffic never mixes with live statistics. */
+  mode?: 'live' | 'test';
   price: number;
   createdAt: number;
 }
@@ -30,6 +32,7 @@ const gameSchema = new Schema({
   status: { type: String, default: 'active' },
   guestLogin: { type: Boolean, default: false },
   walletMode: { type: String, default: 'demo' },
+  mode: { type: String, default: 'live' },
   price: Number,
   createdAt: Number,
 }, { versionKey: false, minimize: false });

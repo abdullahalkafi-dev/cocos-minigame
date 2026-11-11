@@ -31,6 +31,19 @@ export function createLedgerService(d: { players: PlayerRepository; repo: Ledger
       }, session);
       return { balance: p.balance, id };
     },
+    /**
+     * Seamless wallet only: the client's system holds the money, so we do not change the balance, we record what it
+     * told us (`balanceAfter` is the balance it reported) and mirror that balance on the player.
+     */
+    async record(e: LedgerEntryInput & { balanceAfter: number }, session: ClientSession): Promise<{ id: string }> {
+      const id = await d.repo.append({
+        gameId: e.gameId, playerId: e.playerId, delta: e.delta, balanceAfter: e.balanceAfter, kind: e.kind,
+        reference: e.reference ?? null, note: e.note ?? null, createdAt: Date.now(),
+      }, session);
+      await d.players.setBalance(e.playerId, e.balanceAfter, session);
+      return { id };
+    },
+    paidReferences: (gameId: string, refs: string[], session?: ClientSession) => d.repo.existingReferences(gameId, refs, session),
     history: (playerId: string, limit?: number, before?: string) => d.repo.forPlayer(playerId, limit, before),
     byReference: (gameId: string, reference: string) => d.repo.byReference(gameId, reference),
   };

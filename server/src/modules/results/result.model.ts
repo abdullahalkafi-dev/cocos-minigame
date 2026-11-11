@@ -4,6 +4,7 @@ import { Schema, model } from 'mongoose';
 export interface ResultRec {
   _id: string;
   gameId: string;
+  roomId: string;
   playerId: string;
   slug: string;
   bet: number;
@@ -16,6 +17,7 @@ export interface ResultRec {
 const resultSchema = new Schema({
   _id: String,
   gameId: { type: String, required: true },
+  roomId: { type: String, default: 'main' },
   playerId: { type: String, required: true },
   slug: String,
   bet: Number,
@@ -26,4 +28,5 @@ const resultSchema = new Schema({
 }, { versionKey: false });
 resultSchema.index({ gameId: 1, isPreview: 1, createdAt: -1 });
 resultSchema.index({ playerId: 1 });
+resultSchema.index({ gameId: 1, isPreview: 1, roomId: 1, createdAt: -1 });
 export const ResultModel = model<ResultRec>('Result', resultSchema);

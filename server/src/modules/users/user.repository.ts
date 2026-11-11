@@ -4,10 +4,12 @@ import { UserModel, WalletTxModel, type UserRec, type WalletTxRec } from './user
 export const userRepository = {
   byId: (id: string) => UserModel.findById(id).lean<UserRec>().exec(),
   byEmail: (email: string) => UserModel.findOne({ email }).lean<UserRec>().exec(),
+  byTestApiKeyHash: (hash: string) => UserModel.findOne({ testApiKeyHash: hash }).lean<UserRec>().exec(),
+  setTestApiKey: (id: string, hash: string, prefix: string) => UserModel.updateOne({ _id: id }, { $set: { testApiKeyHash: hash, testApiKeyPrefix: prefix } }).exec(),
   byApiKeyHash: (hash: string) => UserModel.findOne({ apiKeyHash: hash }).lean<UserRec>().exec(),
   async create(rec: UserRec, session?: ClientSession) { await UserModel.create([rec], { session }); },
   setApiKey: (id: string, hash: string, prefix: string) => UserModel.updateOne({ _id: id }, { $set: { apiKeyHash: hash, apiKeyPrefix: prefix } }).exec(),
-  setWebhook: (id: string, set: { webhookUrl?: string | null; webhookSecret?: string | null }) => UserModel.updateOne({ _id: id }, { $set: set }).exec(),
+  setWebhook: (id: string, set: { webhookUrl?: string | null; webhookSecret?: string | null; walletUrl?: string | null }) => UserModel.updateOne({ _id: id }, { $set: set }).exec(),
   /** Adds `delta` to the demo balance. A negative delta returns null when the balance would drop below zero. */
   adjustBalance(id: string, delta: number, session?: ClientSession) {
     const filter: Record<string, unknown> = { _id: id };

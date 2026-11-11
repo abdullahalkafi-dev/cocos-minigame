@@ -16,7 +16,7 @@ export function gameRoutes(c: Container) {
     res.json(await c.games.updateConfig(req.game!, req.body?.config));
   });
   r.put('/api/licenses/:id', requireUser, requireOwnedGame, async (req, res) => {
-    res.json(await c.games.updateSettings(req.game!, req.body ?? {}));
+    res.json(await c.games.updateSettings(req.game!, req.body ?? {}, req.user!));
   });
   r.post('/api/licenses/:id/preview-session', requireUser, requireOwnedGame, (req, res) => {
     res.json({ playUrl: c.sessions.previewUrl(req.game!) });

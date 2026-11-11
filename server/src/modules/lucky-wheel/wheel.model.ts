@@ -9,6 +9,8 @@ import type { Snapshot } from './wheel.engine.js';
 export interface WheelRoundRec {
   _id: string;
   gameId: string;
+  /** Room key inside the game ("main" when the game has no rooms). Every room has its own round clock. */
+  roomId: string;
   no: number;
   startAt: number;
   betEnd: number;
@@ -19,24 +21,29 @@ export interface WheelRoundRec {
   extra: string[];
   snapshot: Snapshot;
   settled: boolean;
+  /** While a server is paying the round out, nobody else starts until this time. */
+  leaseUntil?: number | null;
 }
 const roundSchema = new Schema({
   _id: String,
   gameId: { type: String, required: true },
+  roomId: { type: String, default: 'main' },
   no: { type: Number, required: true },
   startAt: Number, betEnd: Number, spinEnd: Number, endAt: Number,
   resultTarget: String, segment: Number,
   extra: { type: [String], default: [] },
   snapshot: { type: Schema.Types.Mixed, required: true },
   settled: { type: Boolean, default: false },
+  leaseUntil: Number,
 }, { versionKey: false });
-roundSchema.index({ gameId: 1, no: -1 }, { unique: true });
+roundSchema.index({ gameId: 1, roomId: 1, no: -1 }, { unique: true });
 roundSchema.index({ settled: 1, spinEnd: 1 });
 export const WheelRoundModel = model<WheelRoundRec>('WheelRound', roundSchema);
 
 export interface WheelBetRec {
   _id: Types.ObjectId;
   gameId: string;
+  roomId: string;
   roundId: string;
   playerId: string;
   target: string;
@@ -47,6 +54,7 @@ export interface WheelBetRec {
 }
 const betSchema = new Schema({
   gameId: { type: String, required: true },
+  roomId: { type: String, default: 'main' },
   roundId: { type: String, required: true },
   playerId: { type: String, required: true },
   target: String, amount: Number,

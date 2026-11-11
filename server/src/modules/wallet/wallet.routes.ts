@@ -11,7 +11,7 @@ import type { Container } from '../../container.js';
 export function walletRoutes(c: Container) {
   const r = Router();
   const base = '/api/v1/games/:gameId/players/:playerId';
-  const ids = (req: { params: Record<string, any> }) => [String(req.params.gameId), String(req.params.playerId)] as const;
+  const ids = (req: { params: Record<string, any>; keyMode?: 'live' | 'test' }) => [req.keyMode, String(req.params.gameId), String(req.params.playerId)] as const;
 
   r.get(base, c.limit(600, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.getPlayer(req.account!, ...ids(req))); });
   r.post(`${base}/credit`, c.limit(600, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.move(req.account!, ...ids(req), 'credit', req.body ?? {})); });
@@ -20,7 +20,7 @@ export function walletRoutes(c: Container) {
 
   // the buyer looks at the same history in the dashboard (signed in as the buyer, no API key needed)
   r.get('/api/licenses/:id/players/:playerId/transactions', c.auth.requireUser, c.auth.requireOwnedGame, async (req, res) => {
-    res.json(await c.wallet.transactions(req.user!, req.game!._id, String(req.params.playerId), req.query));
+    res.json(await c.wallet.transactions(req.user!, undefined, req.game!._id, String(req.params.playerId), req.query));
   });
   return r;
 }

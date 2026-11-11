@@ -2,6 +2,7 @@ import express, { Router, type RequestHandler } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Container } from '../../container.js';
+import { buildOpenApi } from './openapi.js';
 
 const NO_CACHE = (res: express.Response) => res.setHeader('Cache-Control', 'no-cache');
 
@@ -15,6 +16,13 @@ export function systemRoutes(c: Container) {
   };
 
   r.get('/api/health', (_req, res) => { res.json({ ok: true, time: Date.now(), cache: c.cache.kind }); });
+  r.get('/openapi.json', (_req, res) => { res.json(buildOpenApi(c.env.publicUrl)); });
+  // process and live-room numbers for load tests and checks: only when METRICS_TOKEN is set, and only with that token
+  r.get('/api/metrics', (req, res) => {
+    const token = process.env.METRICS_TOKEN;
+    if (!token || req.headers['x-metrics-token'] !== token) { res.status(404).json({ error: 'Not found', code: 'not_found' }); return; }
+    res.json({ ...c.metrics.snapshot(), hub: c.hub.stats() });
+  });
 
   // A game page may only be framed by the sites the buyer allowed (frame-ancestors).
   const framePolicy: RequestHandler = async (req, res, next) => {

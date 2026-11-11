@@ -5,6 +5,7 @@ import type { UserRec } from './user.model.js';
 
 export const userView = (u: UserRec) => ({
   id: u._id, email: u.email, balance: u.balance, hasApiKey: !!u.apiKeyHash, apiKeyPrefix: u.apiKeyPrefix ?? null,
+  hasTestApiKey: !!u.testApiKeyHash, testApiKeyPrefix: u.testApiKeyPrefix ?? null,
 });
 
 export function createUserService(repo: UserRepository = userRepository) {

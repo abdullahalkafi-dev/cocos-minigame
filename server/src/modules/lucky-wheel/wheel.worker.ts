@@ -10,7 +10,7 @@ export function startWheelWorker(d: { wheel: WheelService; cache: Cache }) {
   const settle = setInterval(async () => {
     const release = await d.cache.lock('wheel:settle', 4000);
     if (!release) return;
-    try { await d.wheel.settleDue(null, Date.now()); } catch (e) { console.error('settle worker', e); } finally { await release(); }
+    try { await d.wheel.settleDue(Date.now()); } catch (e) { console.error('settle worker', e); } finally { await release(); }
   }, 2000);
   const prune = setInterval(async () => {
     const release = await d.cache.lock('wheel:prune', 60_000);

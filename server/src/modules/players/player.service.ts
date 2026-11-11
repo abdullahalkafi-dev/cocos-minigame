@@ -45,6 +45,9 @@ export function createPlayerService(d: { repo: PlayerRepository; ledger: LedgerS
       return (await d.repo.byId(rec._id))!;
     },
 
+    /** Seamless wallet: keeps our copy of the balance in step with the client's system. */
+    syncBalance: (p: PlayerRec, balance: number) => d.repo.setBalance(p._id, balance),
+
     /** Demo mode only: tops a broke player back up to the starting balance. */
     async refill(p: PlayerRec, startingBalance: number) {
       const delta = startingBalance - p.balance;

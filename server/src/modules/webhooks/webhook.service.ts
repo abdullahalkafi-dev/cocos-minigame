@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { ClientSession } from 'mongoose';
 import { badRequest, notFound } from '../../common/errors.js';
-import { rid } from '../../common/utils/crypto.js';
+import { decryptSecret, encryptSecret, rid } from '../../common/utils/crypto.js';
 import type { UserRepository } from '../users/user.repository.js';
 import type { UserRec } from '../users/user.model.js';
 import type { WebhookRepository } from './webhook.repository.js';
@@ -26,7 +26,9 @@ export interface Delivery { ok: boolean; status?: number; error?: string }
  * Events are stored first and sent by a worker, so a buyer's outage never loses one: failed deliveries are
  * retried with growing pauses, and every attempt is visible in the dashboard.
  */
-export function createWebhookService(d: { repo: WebhookRepository; users: UserRepository; allowPrivate: boolean }) {
+export function createWebhookService(d: { repo: WebhookRepository; users: UserRepository; allowPrivate: boolean; secret: string }) {
+  /** The signing secret is stored encrypted: a copy of the database alone is not enough to forge notifications. */
+  const plain = (u: UserRec) => (u.webhookSecret ? decryptSecret(u.webhookSecret, d.secret) : null);
   const deliveryView = (e: WebhookEventRec) => ({
     id: e._id, type: e.type, gameId: e.gameId ?? null, status: e.status, attempts: e.attempts, lastStatus: e.lastStatus ?? null,
     lastError: e.lastError ?? null, createdAt: e.createdAt, deliveredAt: e.deliveredAt ?? null, nextAttemptAt: e.status === 'pending' ? e.nextAttemptAt : null,
@@ -34,32 +36,41 @@ export function createWebhookService(d: { repo: WebhookRepository; users: UserRe
 
   const service = {
     // ------------------------------------------------------------ settings (dashboard)
-    config: (u: UserRec) => ({ url: u.webhookUrl ?? null, secret: u.webhookSecret ?? null, configured: !!u.webhookUrl }),
+    config: (u: UserRec) => ({ url: u.webhookUrl ?? null, secret: plain(u), configured: !!u.webhookUrl }),
 
     /** Sets (or clears, with null) the address. The first time, a signing secret is created. */
     async setUrl(u: UserRec, url: unknown) {
-      if (url === null || url === '') { await d.users.setWebhook(u._id, { webhookUrl: null }); return { url: null, secret: u.webhookSecret ?? null, configured: false }; }
+      if (url === null || url === '') { await d.users.setWebhook(u._id, { webhookUrl: null }); return { url: null, secret: plain(u), configured: false }; }
       if (typeof url !== 'string' || url.length > 500) throw badRequest('Enter a full address such as https://example.com/webhooks', 'invalid_webhook_url');
       const safe = await assertSafeWebhookUrl(url.trim(), d.allowPrivate);
-      const secret = u.webhookSecret ?? newWebhookSecret();
-      await d.users.setWebhook(u._id, { webhookUrl: safe.toString(), webhookSecret: secret });
+      const secret = plain(u) ?? newWebhookSecret();
+      await d.users.setWebhook(u._id, { webhookUrl: safe.toString(), webhookSecret: encryptSecret(secret, d.secret) });
       return { url: safe.toString(), secret, configured: true };
+    },
+    /** The signing secret of the account, created the first time it is needed (webhooks and the seamless wallet share it). */
+    async ensureSecret(u: UserRec): Promise<string> {
+      const existing = plain(u);
+      if (existing) return existing;
+      const secret = newWebhookSecret();
+      await d.users.setWebhook(u._id, { webhookSecret: encryptSecret(secret, d.secret) });
+      return secret;
     },
     async rotateSecret(u: UserRec) {
       const secret = newWebhookSecret();
-      await d.users.setWebhook(u._id, { webhookSecret: secret });
+      await d.users.setWebhook(u._id, { webhookSecret: encryptSecret(secret, d.secret) });
       return { url: u.webhookUrl ?? null, secret, configured: !!u.webhookUrl };
     },
     async deliveries(u: UserRec) { return { deliveries: (await d.repo.recent(u._id)).map(deliveryView) }; },
 
     // ------------------------------------------------------------ producing events
     /** Stores an event for sending. Does nothing when the account has no webhook address. Safe to call inside a transaction. */
-    async enqueue(userId: string, gameId: string | null, type: string, data: Record<string, unknown>, session?: ClientSession) {
+    async enqueue(userId: string, gameId: string | null, type: string, data: Record<string, unknown>, o: { session?: ClientSession; id?: string; livemode?: boolean } = {}) {
       const u = await d.users.byId(userId);
       if (!u?.webhookUrl) return null;
-      const id = rid('evt_', 12), now = Date.now();
-      const payload = { id, type, createdAt: new Date(now).toISOString(), gameId, data };
-      await d.repo.create({ _id: id, userId, gameId, type, payload, status: 'pending', attempts: 0, nextAttemptAt: now, createdAt: now }, session);
+      const id = o.id ?? rid('evt_', 12), now = Date.now();
+      const payload = { id, type, createdAt: new Date(now).toISOString(), gameId, livemode: o.livemode ?? true, data };
+      try { await d.repo.create({ _id: id, userId, gameId, type, payload, status: 'pending', attempts: 0, nextAttemptAt: now, createdAt: now }, o.session); }
+      catch (e: any) { if (e?.code === 11000) return id; throw e; }   // a deterministic id that already exists: the event was already queued
       return id;
     },
 
@@ -81,7 +92,7 @@ export function createWebhookService(d: { repo: WebhookRepository; users: UserRe
             headers: {
               'Content-Type': 'application/json', 'User-Agent': 'MiniGameStudio-Webhooks/1',
               'X-Minigame-Event': ev.type, 'X-Minigame-Delivery': ev._id, 'X-Minigame-Timestamp': String(ts),
-              'X-Minigame-Signature': 'v1=' + signPayload(u.webhookSecret, ts, body),
+              'X-Minigame-Signature': 'v1=' + signPayload(decryptSecret(u.webhookSecret, d.secret), ts, body),
             },
             body,
           });

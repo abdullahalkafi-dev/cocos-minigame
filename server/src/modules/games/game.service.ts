@@ -1,5 +1,6 @@
-import { GAME_CACHE_TTL_SEC, type WalletMode } from '../../config/constants.js';
-import { badRequest, notFound } from '../../common/errors.js';
+import { GAME_CACHE_TTL_SEC, type GameMode, type WalletMode } from '../../config/constants.js';
+import { badRequest, conflict, forbidden, notFound } from '../../common/errors.js';
+import type { UserRec } from '../users/user.model.js';
 import { clone, deepMerge } from '../../common/utils/object.js';
 import type { Cache } from '../../infra/cache.js';
 import { fillAssetDefaults, gameBySlug, sanitizeConfig } from '../catalog/index.js';
@@ -46,10 +47,21 @@ export function createGameService(d: { repo: GameRepository; cache: Cache; publi
       return cfg;
     },
     /** How players are identified and where their coins come from (see docs: identity and wallet). */
-    playerSettings: (g: GameRec) => ({ guestLogin: !!g.guestLogin, walletMode: (g.walletMode === 'managed' ? 'managed' : 'demo') as WalletMode }),
+    playerSettings: (g: GameRec) => ({
+      guestLogin: !!g.guestLogin,
+      walletMode: (g.walletMode === 'managed' || g.walletMode === 'seamless' ? g.walletMode : 'demo') as WalletMode,
+      mode: (g.mode === 'test' ? 'test' : 'live') as GameMode,
+    }),
+    /** A test game only answers to the test API key and a live game only to the live key. */
+    assertKeyMode(g: GameRec, keyMode: 'live' | 'test' | undefined) {
+      const gameMode = g.mode === 'test' ? 'test' : 'live';
+      if (keyMode && keyMode !== gameMode) {
+        throw forbidden(gameMode === 'test' ? 'This is a test game: use your test API key (mgs_test_...).' : 'This is a live game: use your live API key (mgs_...).', 'wrong_environment');
+      }
+    },
     /** A new player's balance: the configured starting balance in demo mode, zero when the client's wallet feeds it. */
     startingBalance(g: GameRec) {
-      return service.playerSettings(g).walletMode === 'managed' ? 0 : Number(service.resolveConfig(g).startingBalance) || 0;
+      return service.playerSettings(g).walletMode === 'demo' ? Number(service.resolveConfig(g).startingBalance) || 0 : 0;
     },
     view: (g: GameRec) => ({
       id: g._id, gameId: g._id, name: g.name, game: g.slug, status: g.status,
@@ -79,15 +91,20 @@ export function createGameService(d: { repo: GameRepository; cache: Cache; publi
       return { config: service.resolveConfig({ ...game, config: merged }) };
     },
 
-    async updateSettings(game: GameRec, input: { name?: unknown; allowedOrigins?: unknown; guestLogin?: unknown; walletMode?: unknown }) {
+    async updateSettings(game: GameRec, input: { name?: unknown; allowedOrigins?: unknown; guestLogin?: unknown; walletMode?: unknown; mode?: unknown }, account?: UserRec) {
       const set: Partial<GameRec> = {};
       if (input.guestLogin !== undefined) {
         if (typeof input.guestLogin !== 'boolean') throw badRequest('guestLogin must be true or false');
         set.guestLogin = input.guestLogin;
       }
       if (input.walletMode !== undefined) {
-        if (input.walletMode !== 'demo' && input.walletMode !== 'managed') throw badRequest("walletMode must be 'demo' or 'managed'");
+        if (input.walletMode !== 'demo' && input.walletMode !== 'managed' && input.walletMode !== 'seamless') throw badRequest("walletMode must be 'demo', 'managed' or 'seamless'");
+        if (input.walletMode === 'seamless' && !account?.walletUrl) throw conflict('Set your wallet endpoint first (API key & webhooks page), then switch this game to the seamless wallet.', 'wallet_endpoint_missing');
         set.walletMode = input.walletMode;
+      }
+      if (input.mode !== undefined) {
+        if (input.mode !== 'live' && input.mode !== 'test') throw badRequest("mode must be 'live' or 'test'");
+        set.mode = input.mode;
       }
       if (input.name !== undefined) {
         if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 40) throw badRequest('Name must be 1-40 characters');

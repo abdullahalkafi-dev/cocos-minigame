@@ -7,6 +7,8 @@ export const playerRepository = {
   byExternal: (gameId: string, externalId: string) => PlayerModel.findOne({ gameId, externalId }).lean<PlayerRec>().exec(),
   async create(rec: PlayerRec, session?: ClientSession) { await PlayerModel.create([rec], { session }); },
   setProfile: (id: string, set: { displayName?: string; avatarUrl?: string }) => PlayerModel.updateOne({ _id: id }, { $set: set }).exec(),
+  /** Seamless wallet: copies the balance the client's system reported. Never used for demo or managed wallets. */
+  setBalance: (id: string, balance: number, session?: ClientSession) => PlayerModel.updateOne({ _id: id }, { $set: { balance } }, { session }).exec(),
   touch: (id: string, now: number) => PlayerModel.updateOne({ _id: id }, { $set: { lastSeen: now } }).exec(),
   /**
    * The only place a balance changes. Adds `delta` atomically; a negative delta returns null instead of

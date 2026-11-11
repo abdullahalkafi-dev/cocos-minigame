@@ -2,7 +2,7 @@ import type { UserRec } from '../../modules/users/user.model.js';
 import type { GameRec } from '../../modules/games/game.model.js';
 import type { PlayerRec } from '../../modules/players/player.model.js';
 
-export interface SessionClaims { t: string; lic: string; u?: string; pid?: string; pv?: number }
+export interface SessionClaims { t: string; lic: string; u?: string; pid?: string; pv?: number; rm?: string }
 
 declare global {
   namespace Express {
@@ -11,6 +11,8 @@ declare global {
       user?: UserRec;
       /** Account that owns the API key (set by requireApiKey). */
       account?: UserRec;
+      /** Which key was used: the live key or the test key. */
+      keyMode?: 'live' | 'test';
       /** Game from :id, owned by req.user (set by requireOwnedGame). */
       game?: GameRec;
       /** Play session claims + the game they belong to (set by requireSession / requirePlayer). */

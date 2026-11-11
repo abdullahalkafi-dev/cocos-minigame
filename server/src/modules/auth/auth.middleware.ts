@@ -19,9 +19,10 @@ export function createAuthMiddleware(d: { auth: AuthService; apiKeys: ApiKeyServ
     next();
   };
   const requireApiKey: RequestHandler = async (req, _res, next) => {
-    const account = await d.apiKeys.authenticate(bearer(req));
-    if (!account) throw unauthorized('Invalid API key. Send it as "Authorization: Bearer <your API key>".', 'invalid_api_key');
-    req.account = account;
+    const found = await d.apiKeys.authenticate(bearer(req));
+    if (!found) throw unauthorized('Invalid API key. Send it as "Authorization: Bearer <your API key>".', 'invalid_api_key');
+    req.account = found.user;
+    req.keyMode = found.mode;
     next();
   };
   const requireOwnedGame: RequestHandler = async (req, _res, next) => {

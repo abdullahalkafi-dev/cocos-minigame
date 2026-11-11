@@ -12,6 +12,9 @@ export interface Cache {
   del(...keys: string[]): Promise<void>;
   /** Try to take a lock for `ttlMs`. Returns a release function, or null when someone else holds it. */
   lock(key: string, ttlMs: number): Promise<(() => Promise<void>) | null>;
+  /** Presence: "this member was seen now" in a named set (who is in a room). Entries older than the window count as gone. */
+  touchPresence(set: string, members: string[], windowSec: number): Promise<void>;
+  countPresence(set: string, windowSec: number): Promise<number>;
   flush(): Promise<void>;
   close(): Promise<void>;
 }
@@ -21,6 +24,7 @@ const PREFIX = 'mgs:';
 class MemoryCache implements Cache {
   readonly kind = 'memory' as const;
   private data = new Map<string, { v: string; exp: number }>();
+  private presence = new Map<string, Map<string, number>>();
   async getJson<T>(key: string) {
     const e = this.data.get(key);
     if (!e) return null;
@@ -36,8 +40,21 @@ class MemoryCache implements Cache {
     this.data.set(k, { v: '1', exp: Date.now() + ttlMs });
     return async () => { this.data.delete(k); };
   }
-  async flush() { this.data.clear(); }
-  async close() { this.data.clear(); }
+  async touchPresence(set: string, members: string[], windowSec: number) {
+    const m = this.presence.get(set) ?? new Map<string, number>();
+    const now = Date.now();
+    members.forEach(x => m.set(x, now));
+    for (const [k, t] of m) if (t < now - windowSec * 1000) m.delete(k);
+    this.presence.set(set, m);
+  }
+  async countPresence(set: string, windowSec: number) {
+    const m = this.presence.get(set); if (!m) return 0;
+    const cut = Date.now() - windowSec * 1000;
+    let n = 0; for (const t of m.values()) if (t >= cut) n++;
+    return n;
+  }
+  async flush() { this.data.clear(); this.presence.clear(); }
+  async close() { this.data.clear(); this.presence.clear(); }
 }
 
 export class RedisCache implements Cache {
@@ -64,6 +81,20 @@ export class RedisCache implements Cache {
       if (ok !== 'OK') return null;
       return async () => { try { await this.redis.del(k); } catch { /* expires by itself */ } };
     } catch { return async () => {}; }   // Redis down: do not block the work
+  }
+  async touchPresence(set: string, members: string[], windowSec: number) {
+    if (!members.length) return;
+    try {
+      const key = PREFIX + 'pres:' + set, now = Date.now();
+      const p = this.redis.pipeline();
+      for (const m of members) p.zadd(key, now, m);
+      p.zremrangebyscore(key, '-inf', now - windowSec * 1000);
+      p.expire(key, windowSec * 3);
+      await p.exec();
+    } catch { /* presence is best effort */ }
+  }
+  async countPresence(set: string, windowSec: number) {
+    try { return await this.redis.zcount(PREFIX + 'pres:' + set, Date.now() - windowSec * 1000, '+inf'); } catch { return 0; }
   }
   async flush() { try { const keys = await this.redis.keys(PREFIX + '*'); if (keys.length) await this.redis.del(...keys); } catch { /* ignore */ } }
   async close() { try { await this.redis.quit(); } catch { /* ignore */ } }

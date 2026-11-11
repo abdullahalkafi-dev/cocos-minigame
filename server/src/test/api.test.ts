@@ -92,7 +92,7 @@ test('money safety: parallel bets never overspend and parallel settlement pays o
 
   // five servers/tabs settle the same round at the same time
   await age(40_000);
-  await Promise.all(Array.from({ length: 5 }, () => container.wheel.settleDue(null, Date.now())));
+  await Promise.all(Array.from({ length: 5 }, () => container.wheel.settleDue(Date.now())));
   const settled = (await PlayerModel.findOne({ externalId: 'racer' }).lean())!;
   assert.equal(await h.ledgerSum(settled._id), settled.balance, 'ledger still adds up');
   const round = (await WheelRoundModel.findOne({}).sort({ no: 1 }).lean())!;

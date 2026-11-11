@@ -11,9 +11,14 @@ export interface UserRec {
   /** Hash of the account's ONE secret API key (the key itself is shown once). */
   apiKeyHash?: string | null;
   apiKeyPrefix?: string | null;
+  /** Second key (mgs_test_...) for test games. */
+  testApiKeyHash?: string | null;
+  testApiKeyPrefix?: string | null;
   /** Where signed event notifications are sent (one endpoint per account). */
   webhookUrl?: string | null;
-  /** Secret the notifications are signed with (whsec_...). */
+  /** The seamless wallet endpoint: where we send balance / debit / credit / rollback requests. */
+  walletUrl?: string | null;
+  /** Secret the notifications are signed with (whsec_...), stored encrypted. */
   webhookSecret?: string | null;
   createdAt: number;
 }
@@ -26,7 +31,10 @@ const userSchema = new Schema({
   balance: { type: Number, default: 0 },
   apiKeyHash: { type: String, index: { unique: true, sparse: true } },
   apiKeyPrefix: String,
+  testApiKeyHash: { type: String, index: { unique: true, sparse: true } },
+  testApiKeyPrefix: String,
   webhookUrl: String,
+  walletUrl: String,
   webhookSecret: String,
   createdAt: { type: Number, required: true },
 }, { versionKey: false });

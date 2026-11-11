@@ -27,11 +27,32 @@ export function verify<T = Record<string, any>>(token: string | undefined, secre
   } catch { return null; }
 }
 
-export function hashPassword(pw: string, salt = crypto.randomBytes(16).toString('hex')) {
-  return { salt, hash: crypto.scryptSync(pw, salt, 32).toString('hex') };
+const scrypt = (pw: string, salt: string) => new Promise<Buffer>((resolve, reject) => crypto.scrypt(pw, salt, 32, (e, k) => (e ? reject(e) : resolve(k))));
+
+/** Passwords are hashed with scrypt, off the main thread so a sign-in never blocks the game rounds. */
+export async function hashPassword(pw: string, salt = crypto.randomBytes(16).toString('hex')) {
+  return { salt, hash: (await scrypt(pw, salt)).toString('hex') };
 }
-export function checkPassword(pw: string, salt: string, hash: string) {
-  const h = crypto.scryptSync(pw, salt, 32);
+export async function checkPassword(pw: string, salt: string, hash: string) {
+  const h = await scrypt(pw, salt);
   const e = Buffer.from(hash, 'hex');
   return h.length === e.length && crypto.timingSafeEqual(h, e);
+}
+
+/** Encrypts a small secret for storage (AES-256-GCM, key derived from the server secret). */
+export function encryptSecret(plain: string, secret: string): string {
+  const key = crypto.createHash('sha256').update('enc:' + secret).digest();
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([c.update(plain, 'utf8'), c.final()]);
+  return 'enc1:' + Buffer.concat([iv, c.getAuthTag(), enc]).toString('base64url');
+}
+/** Reverses encryptSecret. Values saved before encryption existed are returned unchanged. */
+export function decryptSecret(stored: string, secret: string): string {
+  if (!stored.startsWith('enc1:')) return stored;
+  const raw = Buffer.from(stored.slice(5), 'base64url');
+  const key = crypto.createHash('sha256').update('enc:' + secret).digest();
+  const d = crypto.createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12));
+  d.setAuthTag(raw.subarray(12, 28));
+  return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString('utf8');
 }

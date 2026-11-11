@@ -7,6 +7,7 @@ import type { LedgerService } from '../ledger/ledger.service.js';
 import type { PlayerService } from '../players/player.service.js';
 import type { PlayerRec } from '../players/player.model.js';
 import type { UserRec } from '../users/user.model.js';
+import type { Bus } from '../../infra/bus.js';
 
 type Direction = 'credit' | 'debit';
 const REFERENCE_RE = /^[A-Za-z0-9_.:@-]{1,100}$/;
@@ -16,18 +17,22 @@ const REFERENCE_RE = /^[A-Za-z0-9_.:@-]{1,100}$/;
  * cash-out (debit). Every call carries a `reference` that makes it safe to retry: the same reference always
  * gives the same answer and never moves money twice.
  */
-export function createWalletService(d: { games: GameService; players: PlayerService; ledger: LedgerService }) {
+export function createWalletService(d: { games: GameService; players: PlayerService; ledger: LedgerService; bus: Bus }) {
   const playerView = (p: PlayerRec) => ({ playerId: p.externalId, displayName: p.displayName, balance: p.balance, createdAt: p.createdAt, lastSeen: p.lastSeen });
 
-  const gameOf = async (account: UserRec, gameId: string): Promise<GameRec> => {
+  const gameOf = async (account: UserRec, gameId: string, keyMode?: 'live' | 'test'): Promise<GameRec> => {
     const g = await d.games.ownedBy(account._id, gameId);
     if (!g) throw notFound('Game not found for this API key', 'game_not_found');
+    d.games.assertKeyMode(g, keyMode);
     return g;
   };
-  const managedGame = async (account: UserRec, gameId: string) => {
-    const g = await gameOf(account, gameId);
-    if (d.games.playerSettings(g).walletMode !== 'managed') {
-      throw conflict("This game uses the demo wallet. Set its wallet mode to 'managed' in the dashboard (Settings) to control coins from your server.", 'wallet_not_enabled');
+  const managedGame = async (account: UserRec, gameId: string, keyMode?: 'live' | 'test') => {
+    const g = await gameOf(account, gameId, keyMode);
+    const mode = d.games.playerSettings(g).walletMode;
+    if (mode !== 'managed') {
+      throw conflict(mode === 'seamless'
+        ? 'This game uses the seamless wallet: coins live in your own system, so there is nothing to credit or debit here.'
+        : "This game uses the demo wallet. Set its wallet mode to 'managed' in the dashboard (Settings) to control coins from your server.", 'wallet_not_enabled');
     }
     return g;
   };
@@ -37,15 +42,15 @@ export function createWalletService(d: { games: GameService; players: PlayerServ
   };
 
   const service = {
-    async getPlayer(account: UserRec, gameId: string, playerId: string) {
-      const g = await gameOf(account, gameId);
+    async getPlayer(account: UserRec, keyMode: 'live' | 'test' | undefined, gameId: string, playerId: string) {
+      const g = await gameOf(account, gameId, keyMode);
       const p = await d.players.byExternal(g._id, checkPlayerId(playerId));
       if (!p || p.isPreview) throw notFound('This player has not been seen in this game yet', 'player_not_found');
       return playerView(p);
     },
 
-    async move(account: UserRec, gameId: string, playerId: string, dir: Direction, body: Record<string, unknown>) {
-      const g = await managedGame(account, gameId);
+    async move(account: UserRec, keyMode: 'live' | 'test' | undefined, gameId: string, playerId: string, dir: Direction, body: Record<string, unknown>) {
+      const g = await managedGame(account, gameId, keyMode);
       const pid = checkPlayerId(playerId);
       const { amount, reference, note, displayName } = body;
       if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 1 || amount > MAX_AMOUNT) {
@@ -90,12 +95,13 @@ export function createWalletService(d: { games: GameService; players: PlayerServ
         throw e;
       }
       if (!posted) throw new AppError(402, 'Insufficient balance', 'insufficient_balance', { balance: player.balance });
+      d.bus.emit('balance', player._id, posted.balance);   // an open game shows it at once
       return answer(pid, posted.balance, posted.id, false);
     },
 
     /** The player's ledger, newest first. Includes the coins the game itself moved (bets and wins). */
-    async transactions(account: UserRec, gameId: string, playerId: string, q: { limit?: unknown; before?: unknown }) {
-      const g = await gameOf(account, gameId);
+    async transactions(account: UserRec, keyMode: 'live' | 'test' | undefined, gameId: string, playerId: string, q: { limit?: unknown; before?: unknown }) {
+      const g = await gameOf(account, gameId, keyMode);
       const p = await d.players.byExternal(g._id, checkPlayerId(playerId));
       if (!p || p.isPreview) throw notFound('This player has not been seen in this game yet', 'player_not_found');
       const limit = Math.min(100, Math.max(1, Number(q.limit) || 50));

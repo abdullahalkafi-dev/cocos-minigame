@@ -181,7 +181,7 @@ test('webhooks: signed test event, round results, retry with backoff', async () 
     const boot = await call('GET', '/api/play/bootstrap', s.body.sessionToken);
     assert.equal((await call('POST', '/api/play/wheel/bet', boot.body.token, { bets: [{ target: 'seven', amount: 30_000 }] })).status, 200);
     await age(40_000);
-    await container.wheel.settleDue(null, Date.now());
+    await container.wheel.settleDue(Date.now());
     await container.webhooks.deliverDue();
     const settled = rx.got.map(g => JSON.parse(g.body)).find(e => e.type === 'round.settled');
     assert.ok(settled, 'round.settled was delivered');
@@ -239,7 +239,7 @@ test('webhooks: a wallet player who is only a preview never produces events', as
     const P = await h.player(token, 'preview_me');
     await call('POST', '/api/play/wheel/bet', P, { bets: [{ target: 'plum', amount: 30_000 }] });
     await age(40_000);
-    await container.wheel.settleDue(null, Date.now());
+    await container.wheel.settleDue(Date.now());
     await container.webhooks.deliverDue();
     assert.equal(rx.got.filter(g => JSON.parse(g.body).type === 'round.settled').length, 0);
   } finally { rx.close(); }

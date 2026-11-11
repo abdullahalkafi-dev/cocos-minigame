@@ -6,7 +6,7 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { createApp } from '../app.js';
+import { createHttpServer } from '../app.js';
 import { createContainer } from '../container.js';
 import { createMemoryCache } from '../infra/cache.js';
 import { connectMongo, disconnectMongo } from '../infra/mongo.js';
@@ -21,7 +21,9 @@ export async function startHarness() {
   const cache = createMemoryCache();
   const env = { nodeEnv: 'test', port: 0, publicUrl: 'http://x.test', dataDir: dir, uploadsDir: dir, mongoUri: '', secret: 'test-secret', publicDir: dir, allowPrivateWebhooks: true };
   const container = createContainer(env, cache);
-  const server = createApp(container).listen(0, '127.0.0.1');
+  const { server, sockets } = createHttpServer(container);
+  container.hub.start();
+  server.listen(0, '127.0.0.1');
   await new Promise(r => server.once('listening', r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
@@ -62,7 +64,7 @@ export async function startHarness() {
   const reset = async () => { await Promise.all(Object.values(mongoose.models).map(m => m.deleteMany({}))); await cache.flush(); };
   /** Sum of all ledger deltas of a player (must always equal their balance). */
   const ledgerSum = async (playerId: string) => (await LedgerModel.find({ playerId }).lean()).reduce((a, e) => a + e.delta, 0);
-  const stop = async () => { server.close(); await cache.close(); await disconnectMongo(); await repl.stop(); };
+  const stop = async () => { container.hub.stop(); sockets.close(); server.close(); await cache.close(); await disconnectMongo(); await repl.stop(); };
 
-  return { container, base, call, upload, buyer, player, age, reset, ledgerSum, stop };
+  return { container, base, server, call, upload, buyer, player, age, reset, ledgerSum, stop };
 }
