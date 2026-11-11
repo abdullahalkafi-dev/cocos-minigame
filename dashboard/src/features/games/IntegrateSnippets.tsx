@@ -20,10 +20,37 @@ function Tabbed({ snips, initial }: { snips: Record<string, Snip>; initial: stri
   );
 }
 
+/** A ready prompt and the links an AI assistant needs to do the integration. */
+function AiCard({ baseUrl, gameId }: { baseUrl: string; gameId: string }) {
+  const { toast } = useApp();
+  const prompt = `Read ${baseUrl}/llms-full.txt completely (the integration playbook, glossary, prompts and API reference of MiniGame Studio) and do not invent endpoints or fields.
+
+My stack: <language, framework, database>.
+How my users log in: <cookie / JWT / OAuth>.
+Game ID: ${gameId}. The API key is in the environment variable MINIGAME_API_KEY.
+
+Task: <for example: add the /game-session endpoint and show the game in my Flutter app; then add credit/debit for my coin purchases and a verified webhook receiver>.
+
+Give me complete code, where each file goes, the environment variables and a short test plan.`;
+  return (
+    <Card className="stack-sm">
+      <div className="row between wrap"><h2>Let an AI assistant do it</h2><Badge tone="brand">ChatGPT · Claude · Gemini · Copilot · Cursor</Badge></div>
+      <p className="muted small">Everything an assistant needs is published as plain text. Copy the prompt, fill in your stack and paste it into your assistant.</p>
+      <div className="codebox"><Button size="sm" className="copy" onClick={async () => { await copy(prompt); toast('Prompt copied'); }} icon="copy">Copy</Button><pre>{prompt}</pre></div>
+      <div className="row wrap">
+        <a href="/llms-full.txt" target="_blank" rel="noreferrer"><Button size="sm" variant="ghost" icon="book">llms-full.txt (everything)</Button></a>
+        <a href="/openapi.json" target="_blank" rel="noreferrer"><Button size="sm" variant="ghost" icon="plug">openapi.json</Button></a>
+        <a href="/postman.json" target="_blank" rel="noreferrer"><Button size="sm" variant="ghost" icon="upload">Postman collection</Button></a>
+      </div>
+    </Card>
+  );
+}
+
 /** The copy-paste code of an integration, in the order a client's developer needs it. */
 export function Snippets({ baseUrl, gameId, walletMode }: { baseUrl: string; gameId: string; walletMode: 'demo' | 'managed' | 'seamless' }) {
   return (
     <>
+      <AiCard baseUrl={baseUrl} gameId={gameId} />
       <Card className="stack-sm">
         <div><h2>Step 1 · Create a session on your server</h2><p className="muted small">Your own login decides who the player is; send your id for that person. Uses your account API key and this game&apos;s ID (<span className="code">{gameId}</span>).</p></div>
         <Tabbed snips={serverSnippets(baseUrl, gameId)} initial="node" />
