@@ -1,5 +1,5 @@
 import { Game, GameCtx } from '../core/GameBase';
-import { LuckyWheel } from './LuckyWheel';
+import { LuckyWheel } from './lucky-wheel/LuckyWheel';
 
 type GameClass = new (ctx: GameCtx) => Game;
 /** slug (from the server catalog) -> game implementation */

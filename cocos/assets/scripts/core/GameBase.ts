@@ -18,6 +18,6 @@ export interface GameCtx {
 }
 
 export abstract class Game {
-  constructor(protected ctx: GameCtx) {}
+  constructor(public ctx: GameCtx) {}
   abstract start(): Promise<void> | void;
 }

@@ -1,47 +1,40 @@
 // Lucky Wheel 77. A shared round clock (betting -> spin -> result) lives on the server; this client only renders it.
 // Every graphic, sound, text, odd and timing comes from the buyer's configuration (asset slots + database).
-import { Node, Sprite, UITransform, Label, tween, Vec3, Color, Tween, BlockInputEvents, SpriteFrame, Graphics } from 'cc';
-import { Game } from '../core/GameBase';
-import { WheelState } from '../core/Api';
-import { cached, makeFrame, panelFrame, radial, rr, sprite, Tex, vgrad } from '../core/Art';
-import { AssetRef, MediaHandle, spawnMedia, spawnSprite, stillFrame } from '../core/Media';
-import { Ticker } from '../core/Ticker';
-import { Sfx } from '../core/Sfx';
-import { emit } from '../core/Host';
-import { clamp, countTo, ensureOpacity, fmtNum, hex, mk, popIn, rand, shade, wait } from '../core/Util';
-import { Button, glowRing, label, toast } from '../core/Widgets';
+import { Node, Sprite, UITransform, Label, tween, Vec3, Color, Tween, SpriteFrame, Graphics } from 'cc';
+import { Game } from '../../core/GameBase';
+import { WheelState } from '../../core/Api';
+import { cached, makeFrame, panelFrame, radial, rr, sprite, Tex, vgrad } from '../../core/Art';
+import { AssetRef, MediaHandle, spawnMedia, spawnSprite, stillFrame } from '../../core/Media';
+import { Ticker } from '../../core/Ticker';
+import { Sfx } from '../../core/Sfx';
+import { emit } from '../../core/Host';
+import { clamp, countTo, ensureOpacity, fmtNum, hex, mk, popIn, rand, shade, wait } from '../../core/Util';
+import { Button, glowRing, label, toast } from '../../core/Widgets';
+import { short } from './format';
+import { WheelEffects } from './effects';
+import { WheelPopups } from './popups';
+import type { BoxView, ChipCfg, Target } from './types';
 
-interface Target { id: string; label: string; multiplier: number; lucky: boolean; icon?: AssetRef; badge?: AssetRef }
-interface ChipCfg { value: number; image?: AssetRef }
-interface BoxView { node: Node; w: number; h: number; pot: Label; mine: Label; glow: Node; stack: Node; lastCount: number }
-
-const short = (n: number) => {
-  const t = (v: number) => String(+v.toFixed(1));
-  if (n >= 1e9) return t(n / 1e9) + 'B';
-  if (n >= 1e6) return t(n / 1e6) + 'M';
-  if (n >= 1e3) return t(n / 1e3) + 'K';
-  return String(n);
-};
-const pad2 = (n: number) => String(n).padStart(2, '0');
-const stamp = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
 
 export class LuckyWheel extends Game {
   private cfg: any;
-  private targets: Target[] = [];
+  targets: Target[] = [];                      // read by effects and popups
   private segs: { target: string }[] = [];
   private chips: ChipCfg[] = [];
-  private T: any;                                  // texts
+  T: any;                                          // texts
+  private effects!: WheelEffects;
+  private popups!: WheelPopups;
   private st!: WheelState;
   private offset = 0;                              // serverTime - Date.now()
   private roundNo = 0;
-  private selected = 0;
+  selected = 0;
   private mine: Record<string, number> = {};
   private lastBets: Record<string, number> = {};
   private inflight = 0;
   private queue: Promise<unknown> = Promise.resolve();
 
   // wheel
-  private disc!: Node;
+  disc!: Node;
   private discR = 170;
   private hubLabel!: Label;
   private rot = 0;                                 // clockwise degrees, current
@@ -56,30 +49,28 @@ export class LuckyWheel extends Game {
   private roundLabel!: Label;
   private statusLabel!: Label;
   private balLabel!: Label;
-  private boxes = new Map<string, BoxView>();
-  private chipNodes: { node: Node; glow: Node }[] = [];
+  boxes = new Map<string, BoxView>();
+  chipNodes: { node: Node; glow: Node }[] = [];
   private ribbon!: Node;
   private ribbonRow!: Node;
   private lastHistoryTop = -1;
-  private popup: Node | null = null;
   private resultDone = 0;                          // round number whose result presentation ran
   private summaryDone = 0;
   private pollAcc = 0;
   private polling = false;
   private soundBtn: Node | null = null;
-  private top = 640; private bot = -640; private wy = 150;
+  top = 640; bot = -640; wy = 150;
   // life and motion
   private ghost: Node | null = null;
   private ring!: Graphics;
-  private hubR = 46;
-  private gemLocalY = 0;
-  private gemGlow: Node | null = null;
+  hubR = 46;
+  gemLocalY = 0;
+  gemGlow: Node | null = null;
   private moteAcc = 0; private gemAcc = 0;
   private lastPhase = '';
   private shownBal = 0;
   private boxPot = new Map<string, number>();
   private betSecs = 20;
-  private popupPanel: Node | null = null; private popupDim: Node | null = null;
 
   async start() {
     const { cfg, stage } = this.ctx;
@@ -87,6 +78,8 @@ export class LuckyWheel extends Game {
     if (new URLSearchParams(location.search).has('debug')) (window as any).__game = this;
     this.cfg = cfg; this.T = cfg.texts;
     this.targets = cfg.targets; this.segs = cfg.segments; this.chips = cfg.chips;
+    this.effects = new WheelEffects(this);
+    this.popups = new WheelPopups({ ctx: this.ctx, T: this.T, targets: this.targets, history: () => this.st.history });
     this.st = await this.ctx.api.wheelState();
     this.betSecs = this.st.timing.betSeconds;
     this.ctx.loader?.set(0.12);
@@ -108,7 +101,6 @@ export class LuckyWheel extends Game {
   private now() { return Date.now() + this.offset; }
   private syncClock(serverTime: number, t0: number, t1: number) { this.offset = serverTime - (t0 + t1) / 2; }
   private A(slot: string): AssetRef | undefined { return this.cfg.assets[slot]; }
-  private get layer() { return this.ctx.stage; }
 
   // ------------------------------------------------------------------ build
   private async build(stage: Node) {
@@ -232,15 +224,15 @@ export class LuckyWheel extends Game {
     this.roundLabel = label(stage, '', 22, theme.text, { x: -240, y: this.top - 62, align: 'left', bold: false, outline: { c: '#00000099', w: 3 } });
     const logo = await spawnSprite(stage, this.A('logo'), 240, 70, -190, this.top - 140, 'contain', 'logo');
     void logo;
-    await mkBtn('btnHelp', 218, this.top - 62, 76, () => this.openHowTo());
+    await mkBtn('btnHelp', 218, this.top - 62, 76, () => this.popups.howTo());
     this.soundBtn = await mkBtn('btnSound', 296, this.top - 62, 76, () => {
       Sfx.setMuted(!Sfx.muted);
       if (this.soundBtn) ensureOpacity(this.soundBtn).opacity = Sfx.muted ? 110 : 255;
     });
     if (this.soundBtn && Sfx.muted) ensureOpacity(this.soundBtn).opacity = 110;
-    await mkBtn('btnHistory', 296, this.top - 144, 76, () => this.openHistory());
-    await mkBtn('btnMyBets', 296, this.top - 226, 76, () => this.openMyBets());
-    await mkBtn('btnRanking', -292, this.top - 162, 84, () => this.openRanking());
+    await mkBtn('btnHistory', 296, this.top - 144, 76, () => this.popups.history());
+    await mkBtn('btnMyBets', 296, this.top - 226, 76, () => this.popups.myBets());
+    await mkBtn('btnRanking', -292, this.top - 162, 84, () => this.popups.ranking());
   }
 
   private async buildBoxes(stage: Node) {
@@ -441,7 +433,7 @@ export class LuckyWheel extends Game {
       this.setStatus(this.T.placeBets);
     } else {
       if (this.hubLabel.string !== '') this.hubLabel.string = '';
-      if (this.lastPhase === 'betting') { this.ripple(); this.ring.clear(); }
+      if (this.lastPhase === 'betting') { this.effects.ripple(); this.ring.clear(); }
       this.setStatus(phase === 'spinning' ? this.T.noMoreBets : '');
     }
     this.lastPhase = phase;
@@ -466,10 +458,10 @@ export class LuckyWheel extends Game {
       }
       this.setRot(rot);
       if (this.ghost) { ensureOpacity(this.ghost).opacity = Math.round(150 * Math.min(1, speed * 1.4)); this.ghost.angle = this.disc.angle + 7 * speed; }
-      if (this.lastSeg === -1 && p < 0.02) { Sfx.playCustom('spin') || Sfx.whoosh(); this.spinBurst(); }
+      if (this.lastSeg === -1 && p < 0.02) { Sfx.playCustom('spin') || Sfx.whoosh(); this.effects.spinBurst(); }
       const idx = this.segUnderPointer();
       if (idx !== this.lastSeg) {
-        if (this.lastSeg !== -1 && p < 0.97) { Sfx.playCustom('tick', 0.6) || Sfx.tick(); this.pulseGem(speed); }
+        if (this.lastSeg !== -1 && p < 0.97) { Sfx.playCustom('tick', 0.6) || Sfx.tick(); this.effects.pulseGem(speed); }
         this.lastSeg = idx;
       }
     }
@@ -512,63 +504,6 @@ export class LuckyWheel extends Game {
     g.lineWidth = 7; g.strokeColor = urgent ? hex('#ff5d5d') : hex(this.ctx.theme.secondary);
     g.arc(0, 0, rad, Math.PI / 2, Math.PI / 2 - frac * Math.PI * 2, true); g.stroke();
   }
-  /** Expanding ring when betting closes. */
-  private ripple() {
-    const wheel = this.disc.parent!;
-    const n = sprite(wheel, Tex.glow(), this.hubR * 1.4, this.hubR * 1.4, this.disc.position.x, this.disc.position.y, hex(this.ctx.theme.secondary), 'ripple');
-    const op = ensureOpacity(n); op.opacity = 230;
-    tween(n).to(0.7, { scale: new Vec3(4.5, 4.5, 1) }, { easing: 'quadOut' }).call(() => n.destroy()).start();
-    tween(op).to(0.7, { opacity: 0 }).start();
-  }
-  private spinBurst() {
-    this.ctx.fx.burst({ x: this.disc.parent!.position.x + this.disc.position.x, y: this.wy + this.disc.position.y, count: 26, shape: 'spark', colors: [this.ctx.theme.secondary, '#ffffff'], speed: [200, 520], gravity: 0, life: [0.4, 0.8], size: [0.6, 1.4] });
-  }
-  /** The top gem flashes each time a wedge passes it. */
-  private pulseGem(speed: number) {
-    const g = this.gemGlow; if (!g) return;
-    Tween.stopAllByTarget(g);
-    g.setScale(1.7, 1.7, 1); tween(g).to(0.16, { scale: new Vec3(1, 1, 1) }, { easing: 'quadOut' }).start();
-    if (speed > 0.12) this.ctx.fx.burst({ x: 0, y: this.wy + this.gemLocalY - 6, count: 2, shape: 'spark', colors: ['#ffffff', this.ctx.theme.secondary], speed: [60, 200], angle: [200, 340], gravity: 300, life: [0.25, 0.5], size: [0.3, 0.7] });
-  }
-  /** The winning symbol pops out of the wheel, then flies into the history ribbon. */
-  private async popResultIcon(hits: string[]) {
-    const { theme, uiLayer } = this.ctx;
-    const t = this.targets.find(x => x.id === hits[0]); if (!t) return;
-    const n = await spawnSprite(uiLayer, t.icon, 170, 170, 0, this.wy + 20, 'contain', 'resicon'); if (!n) return;
-    const name = hits.map(h => this.targets.find(x => x.id === h)?.label ?? h).join(' + ');
-    const mult = this.targets.find(x => x.id === hits[0])?.multiplier ?? 0;
-    const lb = label(uiLayer, `${name}  x${mult}`, 34, theme.secondary, { y: this.wy - 122, outline: { c: '#2a0a5a', w: 5 } });
-    const nop = ensureOpacity(n), lop = ensureOpacity(lb.node); nop.opacity = 0; lop.opacity = 0;
-    n.setScale(0.2, 0.2, 1); lb.node.setScale(0.6, 0.6, 1);
-    tween(n).to(0.5, { scale: new Vec3(1.5, 1.5, 1) }, { easing: 'backOut' }).start();
-    tween(nop).to(0.2, { opacity: 255 }).start();
-    tween(lb.node).to(0.4, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start(); tween(lop).to(0.25, { opacity: 255 }).start();
-    await wait(1.2);
-    if (!n.isValid) return;
-    tween(lop).to(0.3, { opacity: 0 }).call(() => lb.node.destroy()).start();
-    tween(n).to(0.5, { position: new Vec3(-252, this.bot + 382, 0), scale: new Vec3(0.3, 0.3, 1) }, { easing: 'quadInOut' }).call(() => n.destroy()).start();
-    tween(nop).delay(0.3).to(0.2, { opacity: 0 }).start();
-  }
-  /** Winning stacks fly to the balance as coins; losing stacks fade away. */
-  private settleStacks(hits: string[]) {
-    const { theme, fx } = this.ctx;
-    this.boxes.forEach((b, id) => {
-      if (b.lastCount === 0) return;
-      if (hits.includes(id)) {
-        const px = b.node.position.x, py = b.node.position.y;
-        for (let k = 0; k < 7; k++) {
-          const c = sprite(this.ctx.uiLayer, Tex.coin(theme.secondary), 34, 34, px - b.w * 0.3 + rand(-14, 14), py + rand(-10, 10), undefined, 'flycoin');
-          c.setScale(0, 0, 1);
-          tween(c).delay(k * 0.07).to(0.15, { scale: new Vec3(1, 1, 1) }).to(0.7, { position: new Vec3(-190, this.bot + 62, 0), scale: new Vec3(0.6, 0.6, 1) }, { easing: 'quadIn' }).call(() => { c.destroy(); if (k % 3 === 0) Sfx.coin(); }).start();
-        }
-        fx.burst({ x: px, y: py, count: 8, shape: 'star', colors: [theme.secondary, '#ffffff'], speed: [100, 300], gravity: 200, life: [0.4, 0.8] });
-        tween(b.stack).to(0.25, { scale: new Vec3(1.25, 1.25, 1) }).to(0.3, { scale: new Vec3(0, 0, 1) }).start();
-      } else {
-        tween(b.stack).to(0.5, { position: new Vec3(b.stack.position.x, b.stack.position.y - 18, 0) }).start();
-        tween(ensureOpacity(b.stack)).to(0.5, { opacity: 0 }).start();
-      }
-    });
-  }
 
   // ------------------------------------------------------------------ result
   private onResult() {
@@ -594,8 +529,8 @@ export class LuckyWheel extends Game {
     });
     const lucky = r.hits.some(h => this.targets.find(t => t.id === h)?.lucky);
     this.ctx.fx.burst({ x: 0, y: 150, count: lucky ? 50 : 22, shape: 'spark', colors: [this.ctx.theme.secondary, '#ffffff'], speed: [150, 520], gravity: 0, life: [0.5, 1], size: [0.8, 1.6] });
-    void this.popResultIcon(r.hits);
-    this.settleStacks(r.hits);
+    void this.effects.popResultIcon(r.hits);
+    this.effects.settleStacks(r.hits);
   }
 
   private async onSummary() {
@@ -610,14 +545,14 @@ export class LuckyWheel extends Game {
         if (!Sfx.playCustom('win')) lucky ? Sfx.jackpot() : Sfx.win(2);
         fx.burst({ x: 0, y: -380, count: 26, shape: 'coin', speed: [300, 800], angle: [60, 120], gravity: 1300, life: [1, 1.8] });
         fx.burst({ x: 0, y: -380, count: 40, shape: 'confetti', colors: [theme.secondary, '#fff', '#f43f5e', '#22d3ee'], speed: [300, 800], angle: [50, 130], gravity: 1000, life: [1.2, 2] });
-        this.floatText(`+${fmtNum(myWin)}`, theme.secondary);
+        this.effects.floatText(`+${fmtNum(myWin)}`, theme.secondary);
         void this.playFx(lucky ? 'fxJackpot' : 'fxWin');
       } else if (!Sfx.playCustom('lose')) Sfx.lose();
     }
     if (sum.winners.length) {
       const left = Math.max(2500, r.endAt - this.now() - 700);
       await wait(1.1);
-      if (this.roundNo === r.no) this.openWinners(sum, Math.min(left, 6000) / 1000);
+      if (this.roundNo === r.no) this.popups.winners(sum, Math.min(left, 6000) / 1000);
     }
   }
 
@@ -631,13 +566,6 @@ export class LuckyWheel extends Game {
     h.destroy();
   }
 
-  private floatText(text: string, color: string) {
-    const l = label(this.ctx.uiLayer, text, 64, color, { y: this.bot + 390, outline: { c: '#2a0a5a', w: 6 } });
-    const op = ensureOpacity(l.node); op.opacity = 0;
-    l.node.setScale(0.5, 0.5, 1);
-    tween(l.node).to(0.3, { scale: new Vec3(1.1, 1.1, 1) }, { easing: 'backOut' }).by(1.3, { position: new Vec3(0, 90, 0) }).start();
-    tween(op).to(0.2, { opacity: 255 }).delay(1.1).to(0.3, { opacity: 0 }).call(() => l.node.destroy()).start();
-  }
 
   // ------------------------------------------------------------------ history ribbon
   private async renderHistory(h: { no: number; hits: string[] }[]) {
@@ -686,7 +614,7 @@ export class LuckyWheel extends Game {
   private addBets(add: Record<string, number>) {
     const { hud } = this.ctx;
     const total = Object.values(add).reduce((a, v) => a + v, 0);
-    Object.entries(add).forEach(([id, v]) => { this.mine[id] = (this.mine[id] ?? 0) + v; this.refreshBox(id); this.flyChip(id); });
+    Object.entries(add).forEach(([id, v]) => { this.mine[id] = (this.mine[id] ?? 0) + v; this.refreshBox(id); this.effects.flyChip(id); });
     hud.setBalance(hud.balance - total, true);
     Sfx.playCustom('chip') || Sfx.coin();
     this.inflight++;
@@ -703,154 +631,6 @@ export class LuckyWheel extends Game {
     });
   }
 
-  private flyChip(id: string) {
-    const b = this.boxes.get(id), c = this.chipNodes[this.selected];
-    if (!b || !c) return;
-    const img = c.node.getChildByName('img');
-    const n = mk('fly', this.ctx.uiLayer, c.node.position.x, c.node.position.y, 70, 70);
-    const sp = img?.getComponent(Sprite);
-    if (sp?.spriteFrame) { const s = n.addComponent(Sprite); s.sizeMode = Sprite.SizeMode.CUSTOM; s.spriteFrame = sp.spriteFrame; n.getComponent(UITransform)!.setContentSize(70, 70); }
-    else sprite(n, Tex.coin(this.ctx.theme.secondary), 56, 56);
-    tween(n).to(0.38, { position: new Vec3(b.node.position.x + (Math.random() - 0.5) * 50, b.node.position.y + (Math.random() - 0.5) * 20, 0), scale: new Vec3(0.55, 0.55, 1) }, { easing: 'quadOut' })
-      .call(() => { n.destroy(); b.node.setScale(1.04, 1.04, 1); tween(b.node).to(0.15, { scale: new Vec3(1, 1, 1) }).start(); }).start();
-  }
 
-  // ------------------------------------------------------------------ popups
-  private openPopup(title: string, w: number, h: number): Node {
-    this.closePopup();
-    const { theme, uiLayer } = this.ctx;
-    const root = mk('popup', uiLayer, 0, 0, 3000, 3000);
-    root.addComponent(BlockInputEvents);
-    const dim = sprite(root, Tex.rect(), 3000, 3000, 0, 0, new Color(0, 0, 0, 170), 'dim');
-    ensureOpacity(dim).opacity = 0; tween(ensureOpacity(dim)).to(0.2, { opacity: 255 }).start();
-    dim.on(Node.EventType.TOUCH_END, () => this.closePopup());
-    const panel = mk('panel', root, 0, 20, w, h);
-    panel.on(Node.EventType.TOUCH_END, () => undefined);
-    sprite(panel, panelFrame(w, h, theme.popup, theme.accent, 30, 0.98), w, h);
-    const tw = Math.max(230, title.length * 22 + 80);
-    sprite(panel, cached(`tab:${theme.accent}:${tw}`, tw, 60, (g) => {
-      g.fillStyle = theme.accent; g.beginPath(); g.moveTo(14, 4); g.lineTo(tw - 14, 4); g.quadraticCurveTo(tw - 2, 4, tw - 6, 22); g.lineTo(tw - 20, 54); g.lineTo(20, 54); g.lineTo(6, 22); g.quadraticCurveTo(2, 4, 14, 4); g.fill();
-      g.strokeStyle = shade(theme.accent, -0.4); g.lineWidth = 3; g.stroke();
-    }), tw, 60, 0, h / 2 + 2);
-    label(panel, title, 28, '#2a0a5a', { y: h / 2 + 4, bold: true });
-    popIn(panel, 0.3, 0.7);
-    this.popup = root; this.popupPanel = panel; this.popupDim = dim;
-    return panel;
-  }
-  private closePopup() {
-    const root = this.popup, panel = this.popupPanel, dim = this.popupDim;
-    this.popup = null; this.popupPanel = null; this.popupDim = null;
-    if (!root?.isValid) return;
-    if (panel?.isValid) tween(panel).to(0.16, { scale: new Vec3(0.88, 0.88, 1) }).start();
-    if (dim?.isValid) tween(ensureOpacity(dim)).to(0.16, { opacity: 0 }).call(() => { if (root.isValid) root.destroy(); }).start(); else root.destroy();
-  }
-
-  private openHowTo() {
-    const lines: string[] = this.T.howToPlay ?? [];
-    const w = 650;
-    const est = lines.map(l => Math.ceil(l.length / 52) * 30 + 12);
-    const h = Math.min(980, est.reduce((a, b) => a + b, 0) + 80);
-    const panel = this.openPopup(this.T.howToPlayTitle, w, h);
-    let y = h / 2 - 54;
-    lines.forEach((l, i) => {
-      const lb = label(panel, `${i + 1}. ${l}`, 22, '#ffffff', { x: 0, y, w: w - 80, wrap: true, align: 'center', bold: false, lineHeight: 30 });
-      lb.horizontalAlign = Label.HorizontalAlign.LEFT;
-      const ut = lb.node.getComponent(UITransform)!; ut.anchorY = 1;
-      y -= est[i];
-    });
-  }
-
-  private async openHistory() {
-    const panel = this.openPopup(this.T.historyTitle, 650, 600);
-    const items = this.st.history.slice(0, 48);
-    const cols = 8, cell = 72;
-    await Promise.all(items.map(async (it, i) => {
-      const c = i % cols, r = Math.floor(i / cols);
-      const x = (c - (cols - 1) / 2) * cell, y = 200 - r * cell;
-      if (i === 0) sprite(panel, panelFrame(60, 60, '#6b4a00', this.ctx.theme.secondary, 10, 0.8), 60, 60, x, y);
-      const t = this.targets.find(z => z.id === it.hits[0]);
-      await spawnSprite(panel, t?.icon, 46, 46, x, y, 'contain', 'h');
-    }));
-    if (!items.length) label(panel, 'No rounds yet', 24, '#c4b5fd', { bold: false });
-  }
-
-  private async openMyBets() {
-    const panel = this.openPopup(this.T.myBetsTitle, 650, 600);
-    const { theme } = this.ctx;
-    sprite(panel, panelFrame(590, 44, '#ffffff', 'rgba(255,255,255,0)', 8, 0.14), 590, 44, 0, 205);
-    ([['Time', -280], ['Bet', -95], ['Result', 40], ['Revenue', 140]] as const).forEach(([t, x]) => label(panel, t, 20, '#ffffff', { x, y: 205, align: 'left', bold: false }));
-    const res = await this.ctx.api.wheelMyBets().catch(() => ({ bets: [] }));
-    if (!panel.isValid) return;
-    if (!res.bets.length) label(panel, 'No bets yet', 24, '#c4b5fd', { y: 60, bold: false });
-    res.bets.slice(0, 9).forEach((b, i) => {
-      const y = 150 - i * 50;
-      label(panel, stamp(b.time), 17, '#e9ddff', { x: -280, y, align: 'left', bold: false });
-      label(panel, `${b.label} ${short(b.amount)}`, 18, '#e9ddff', { x: -95, y, align: 'left', bold: false });
-      label(panel, b.win > 0 ? 'Win' : 'Lose', 18, b.win > 0 ? '#86efac' : '#fca5a5', { x: 40, y, align: 'left', bold: true });
-      sprite(panel, Tex.coin(theme.secondary), 24, 24, 150, y);
-      label(panel, b.win > 0 ? short(b.win) : '0', 18, '#ffffff', { x: 170, y, align: 'left', bold: true });
-    });
-  }
-
-  private crown(parent: Node, x: number, y: number, size: number, color = '#facc15') {
-    sprite(parent, cached('crown:' + color, 48, 36, (g, w, h) => {
-      g.fillStyle = color; g.beginPath(); g.moveTo(4, 30); g.lineTo(2, 8); g.lineTo(14, 18); g.lineTo(24, 4); g.lineTo(34, 18); g.lineTo(46, 8); g.lineTo(44, 30); g.closePath(); g.fill();
-      g.strokeStyle = shade(color, -0.45); g.lineWidth = 2; g.stroke();
-      g.fillStyle = shade(color, -0.2); g.fillRect(4, 28, 40, 6);
-    }), size, size * 0.75, x, y);
-  }
-  private avatarDot(parent: Node, x: number, y: number, size: number, name: string) {
-    const { theme } = this.ctx;
-    sprite(parent, cached('dot:' + theme.primary, 48, 48, (g, w, h) => {
-      g.fillStyle = shade(theme.primary, 0.25); g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 2, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 3; g.stroke();
-    }), size, size, x, y);
-    label(parent, (name[0] || '?').toUpperCase(), Math.round(size * 0.5), '#fff', { x, y: y - 1 });
-  }
-
-  private async openRanking() {
-    const panel = this.openPopup(this.T.rankingTitle, 650, 760);
-    const { theme } = this.ctx;
-    sprite(panel, panelFrame(590, 44, '#ffffff', 'rgba(255,255,255,0)', 8, 0.14), 590, 44, 0, 300);
-    label(panel, 'Ranking', 20, '#fff', { x: -280, y: 300, align: 'left', bold: false }); label(panel, 'Bet', 20, '#fff', { x: -170, y: 300, align: 'left', bold: false }); label(panel, 'Reward', 20, '#fff', { x: 280, y: 300, align: 'right', bold: false });
-    const res = await this.ctx.api.wheelRanking().catch(() => null);
-    if (!panel.isValid || !res) return;
-    res.list.slice(0, 9).forEach((r, i) => {
-      const y = 240 - i * 56;
-      if (r.rank <= 3) this.crown(panel, -255, y, 40, ['#facc15', '#cbd5e1', '#d97706'][r.rank - 1]); else label(panel, String(r.rank), 20, '#e9ddff', { x: -255, y, bold: false });
-      this.avatarDot(panel, -170, y, 34, r.username);
-      label(panel, r.username, 20, '#ffffff', { x: -140, y, align: 'left', bold: false });
-      sprite(panel, Tex.coin(theme.secondary), 24, 24, 175, y);
-      label(panel, short(r.win), 20, '#ffffff', { x: 290, y, align: 'right', bold: true });
-    });
-    if (!res.list.length) label(panel, 'No winners yet', 24, '#c4b5fd', { y: 60, bold: false });
-    sprite(panel, panelFrame(590, 64, '#4c2bb0', theme.accent, 14, 0.9), 590, 64, 0, -300);
-    this.avatarDot(panel, -250, -300, 40, res.me.username);
-    label(panel, res.me.username, 22, '#ffffff', { x: -215, y: -300, align: 'left', bold: true });
-    label(panel, res.me.rank ? `#${res.me.rank}` : '--', 20, '#e9ddff', { x: -60, y: -300, bold: false });
-    label(panel, short(res.me.win), 22, '#ffffff', { x: 290, y: -300, align: 'right', bold: true });
-  }
-
-  private openWinners(sum: NonNullable<WheelState['round']['summary']>, seconds: number) {
-    const panel = this.openPopup(this.T.goodLuckTitle, 650, 540);
-    const { theme, player } = this.ctx;
-    label(panel, this.T.goodLuckBody, 22, '#ffffff', { y: 190, bold: false });
-    const n = Math.min(3, sum.winners.length);
-    sum.winners.slice(0, 3).forEach((w, i) => {
-      const x = (i - (n - 1) / 2) * 190, y = 70;
-      this.avatarDot(panel, x, y, 84, w.username);
-      this.crown(panel, x, y + 64, 56);
-      label(panel, w.username, 18, '#ffffff', { x, y: -4, bold: true });
-      const box = (txt: string, yy: number) => { sprite(panel, panelFrame(150, 30, '#000000', 'rgba(255,255,255,0)', 6, 0.55), 150, 30, x, yy); label(panel, txt, 17, '#ffffff', { x, y: yy, bold: false }); };
-      box(`Bet: ${short(w.bet)}`, -40); box(`Win: ${short(w.win)}`, -78);
-    });
-    sprite(panel, panelFrame(590, 90, '#4c2bb0', 'rgba(255,255,255,0)', 14, 0.9), 590, 90, 0, -190);
-    this.avatarDot(panel, -250, -190, 56, player.username);
-    label(panel, player.username, 24, '#ffffff', { x: -205, y: -190, align: 'left', bold: true });
-    label(panel, `Bet : ${fmtNum(sum.my.bet)}`, 18, '#ffffff', { x: 285, y: -168, align: 'right', bold: false });
-    label(panel, `Win : ${fmtNum(sum.my.win)}`, 18, sum.my.win > 0 ? '#86efac' : '#ffffff', { x: 285, y: -208, align: 'right', bold: true });
-    void theme;
-    const root = this.popup;
-    void (async () => { await wait(seconds); if (this.popup === root) this.closePopup(); })();
-  }
 }
 void hex; void vgrad; void rr; void stillFrame; void glowRing;
