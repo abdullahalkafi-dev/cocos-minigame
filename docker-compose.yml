@@ -12,6 +12,8 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
       MONGODB_URI: ${MONGODB_URI:?set MONGODB_URI in .env}
       REDIS_URL: redis://redis:6379
+      # optional: enables GET /api/metrics (header x-metrics-token)
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
     volumes:
       - minigames-data:/data
 
