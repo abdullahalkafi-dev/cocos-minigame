@@ -17,5 +17,10 @@ export function walletRoutes(c: Container) {
   r.post(`${base}/credit`, c.limit(600, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.move(req.account!, ...ids(req), 'credit', req.body ?? {})); });
   r.post(`${base}/debit`, c.limit(600, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.move(req.account!, ...ids(req), 'debit', req.body ?? {})); });
   r.get(`${base}/transactions`, c.limit(300, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.transactions(req.account!, ...ids(req), req.query)); });
+
+  // the buyer looks at the same history in the dashboard (signed in as the buyer, no API key needed)
+  r.get('/api/licenses/:id/players/:playerId/transactions', c.auth.requireUser, c.auth.requireOwnedGame, async (req, res) => {
+    res.json(await c.wallet.transactions(req.user!, req.game!._id, String(req.params.playerId), req.query));
+  });
   return r;
 }

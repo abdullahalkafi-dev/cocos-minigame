@@ -12,71 +12,175 @@
   body { margin:0; background:var(--bg); color:var(--text); font:16px/1.65 Inter,system-ui,-apple-system,'Segoe UI',sans-serif; }
   header { background:linear-gradient(135deg,#4c1d95,#7c3aed 60%,#d946ef); color:#fff; padding:46px 24px 30px; }
   .in, main { max-width:960px; margin:0 auto; }
-  header h1 { margin:0 0 6px; font-size:36px; letter-spacing:-.02em; } header p { margin:0; opacity:.92; font-size:18px; max-width:60ch; }
+  header h1 { margin:0 0 6px; font-size:36px; letter-spacing:-.02em; } header p { margin:0; opacity:.92; font-size:18px; max-width:62ch; }
   nav { position:sticky; top:0; z-index:5; background:color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
   nav .in { display:flex; gap:4px; overflow-x:auto; padding:8px 24px; } nav a { color:var(--muted); text-decoration:none; padding:6px 12px; border-radius:8px; font-weight:600; font-size:14px; white-space:nowrap; } nav a:hover { background:var(--soft); color:var(--brand); }
   main { padding:26px 24px 90px; display:grid; gap:22px; }
-  section { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:26px 28px; }
-  h2 { margin:0 0 10px; font-size:22px; letter-spacing:-.01em; } h3 { margin:20px 0 6px; font-size:16.5px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:26px 28px; min-width:0; }
+  h2 { margin:0 0 10px; font-size:22px; letter-spacing:-.01em; } h3 { margin:22px 0 6px; font-size:16.5px; }
   p { margin:8px 0; } ul, ol { margin:8px 0; padding-left:22px; } li { margin:4px 0; }
   code { background:var(--soft); color:var(--brand); padding:1px 6px; border-radius:6px; font-size:.9em; }
   pre { background:var(--code); color:#e2e8f0; padding:16px 18px; border-radius:12px; overflow-x:auto; font-size:13.3px; line-height:1.6; margin:10px 0; border:1px solid #25253f; }
   pre code { background:none; color:inherit; padding:0; }
   .note { background:var(--soft); border-left:4px solid var(--brand); padding:12px 16px; border-radius:8px; margin:12px 0; }
   .warn { background:#fef3c7; color:#78350f; border-left:4px solid #f59e0b; padding:12px 16px; border-radius:8px; margin:12px 0; }
+  .tablewrap { overflow-x:auto; }
   table { width:100%; border-collapse:collapse; font-size:14.5px; } th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
   .steps { counter-reset:s; list-style:none; padding:0; } .steps > li { counter-increment:s; display:grid; grid-template-columns:38px 1fr; gap:14px; margin:16px 0; } .steps > li::before { content:counter(s); width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#7c3aed,#d946ef); color:#fff; display:grid; place-items:center; font-weight:800; }
   .tabs { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 0; } .tabs button { border:1px solid var(--line); background:var(--bg); color:var(--muted); border-radius:9px; padding:6px 14px; cursor:pointer; font:inherit; font-weight:600; font-size:14px; } .tabs button.on { background:var(--brand); color:#fff; border-color:var(--brand); }
   .codebox { position:relative; } button.copy { position:absolute; top:10px; right:10px; border:0; background:rgba(255,255,255,.14); color:#fff; padding:4px 10px; border-radius:6px; cursor:pointer; font-size:12px; }
   .pill { display:inline-block; font-size:12px; font-weight:700; padding:2px 9px; border-radius:99px; background:var(--soft); color:var(--brand); }
+  .check li { list-style:none; margin-left:-22px; padding-left:26px; position:relative; } .check li::before { content:"\2713"; position:absolute; left:0; color:var(--brand); font-weight:800; }
 </style>
 </head>
 <body>
 <header><div class="in">
   <h1>Integration Guide</h1>
-  <p>Put a polished mini game inside your website or mobile app with <b>one API key</b> and a game ID. About 10 minutes.</p>
+  <p>Put a polished mini game inside your website or mobile app. <b>Your system</b> logs your users in and sells the coins; <b>we</b> run the game. About 10 minutes for the first version.</p>
 </div></header>
-<nav><div class="in"><a href="#quick">Quick start</a><a href="#concepts">How it works</a><a href="#api">API reference</a><a href="#server">Server examples</a><a href="#client">Show the game</a><a href="#events">Events</a><a href="#custom">Customizing</a><a href="#players">Players &amp; results</a><a href="#security">Security</a><a href="#help">Troubleshooting</a></div></nav>
+<nav><div class="in"><a href="#quick">Quick start</a><a href="#concepts">How it works</a><a href="#identity">Players</a><a href="#wallet">Coins</a><a href="#webhooks">Webhooks</a><a href="#api">API reference</a><a href="#server">Server examples</a><a href="#client">Show the game</a><a href="#events">Game events</a><a href="#checklist">Checklist</a><a href="#security">Security</a><a href="#help">Troubleshooting</a></div></nav>
 <main>
 
 <section id="quick">
   <h2>Quick start</h2>
   <ol class="steps">
-    <li><div><b>Create an account and copy your API key.</b><br>Sign up at <a href="/">{{HOST}}</a>. Your <b>API key</b> (<code>mgs_…</code>) is shown once right after sign-up and any time you press <i>Rotate</i> under <b>API key</b> in the dashboard. It is <b>one key for your whole account</b>, whichever games you own.</div></li>
-    <li><div><b>Buy a game and note its game ID.</b><br>Each game you own has a <b>game ID</b> (<code>lic_…</code>), shown in the dashboard, on the <b>API key</b> page and in <code>GET /api/v1/games</code>.</div></li>
-    <li><div><b>Add one endpoint to your backend.</b><br>It calls <code>POST {{HOST}}/api/v1/sessions</code> with the API key and the game ID and returns the <code>playUrl</code> to your front-end. See the <a href="#server">examples</a> (Node.js, Python, Java, PHP, cURL).</div></li>
-    <li><div><b>Show the game.</b><br>Open that <code>playUrl</code> in an iframe (website) or a WebView (Flutter, Android, iOS), or use the 3-line JavaScript SDK. Players pick a username and play.</div></li>
+    <li><div><b>Create an account and copy your API key.</b><br>Sign up at <a href="/">{{HOST}}</a>. Your <b>API key</b> (<code>mgs_…</code>) is shown once right after sign-up and whenever you press <i>Rotate</i> under <b>API key &amp; webhooks</b>. It is <b>one key for your whole account</b>, whichever games you own.</div></li>
+    <li><div><b>Buy a game and note its game ID.</b><br>Each game you own has a <b>game ID</b> (<code>lic_…</code>), shown in the dashboard and in <code>GET /api/v1/games</code>.</div></li>
+    <li><div><b>Add one endpoint to your backend.</b><br>After <i>your own</i> login has identified the user, it calls <code>POST {{HOST}}/api/v1/sessions</code> with the API key, the game ID and <b>your id for that user</b>, and returns the <code>playUrl</code> to your front-end. See the <a href="#server">examples</a> (Node.js, Python, Java, PHP, cURL).</div></li>
+    <li><div><b>Show the game.</b><br>Open that <code>playUrl</code> in an iframe (website) or a WebView (Flutter, Android, iOS), or use the 3-line JavaScript SDK. The player lands straight in the game: no sign-in screen, because you already know who they are.</div></li>
+    <li><div><b>Connect the coins (when you are ready).</b><br>Switch the game to <i>managed wallet</i> in <b>Settings</b>, then call <code>credit</code> when you sell coins and <code>debit</code> for a cash-out. See <a href="#wallet">Coins</a>. Optionally receive results with <a href="#webhooks">webhooks</a>.</div></li>
   </ol>
   <div class="note">Try it before you code: dashboard → your game → <b>Customize</b>. The preview on the right is the real game.</div>
 </section>
 
 <section id="concepts">
   <h2>How it works</h2>
+  <p>The split of responsibilities is deliberately simple, and the same for every client:</p>
+  <div class="tablewrap"><table>
+    <tr><th>Your system</th><th>Our system</th></tr>
+    <tr><td>Your users, their passwords, login, security, KYC</td><td>The game: rules, odds, fairness, the shared round clock</td></tr>
+    <tr><td>Deciding who may play</td><td>Short-lived play sessions (15 minutes)</td></tr>
+    <tr><td>Selling coins, refunds, cash-outs</td><td>The coin ledger (when you use the managed wallet)</td></tr>
+    <tr><td>Your own database and screens</td><td>Players' history, results and the dashboard for you</td></tr>
+  </table></div>
   <ul>
-    <li><b>API key</b> (<code>mgs_…</code>): the <b>secret</b> that proves a request comes from your account. One per account. Use it only on your server.</li>
-    <li><b>Game ID</b> (<code>lic_…</code>): which of your games to open. You can own many; the same key serves all of them. It is <b>not secret</b>.</li>
-    <li><b>Play link</b> (<code>playUrl</code>): a temporary link created by <i>your server</i>. It expires after <b>15 minutes</b>, so it is safe to give to a browser or app.</li>
-    <li><b>Player</b>: whoever plays. They pick a username the first time (unique inside that game), or you pass their name from your own login so they skip that screen. Balances and history are saved per username.</li>
-    <li><b>Customization</b>: images, video, sounds, texts, rules and odds are set in the dashboard. Every session loads <i>that game's</i> settings.</li>
+    <li><b>API key</b> (<code>mgs_…</code>): the <b>secret</b> that proves a request comes from your server. One per account. Server only.</li>
+    <li><b>Game ID</b> (<code>lic_…</code>): which of your games to use. Not secret. The same key serves all your games.</li>
+    <li><b>Player id</b>: <i>your</i> id for a person (a user id, an email hash, anything stable). We never see passwords and never check logins.</li>
+    <li><b>Play link</b> (<code>playUrl</code>): created by your server for one player, expires after <b>15 minutes</b>, safe to hand to a browser or app.</li>
+    <li><b>Customization</b>: images, video, sounds, texts, rules and odds are set in the dashboard and apply to every session of that game.</li>
   </ul>
+</section>
+
+<section id="identity">
+  <h2>Players and identity</h2>
+  <p>Your server tells us <b>who is playing</b> when it creates the session. Because the request is authenticated with your secret API key, we trust the player id you send: <b>nobody can play as someone else</b>, since a player never talks to us before your server vouches for them.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Field</th><th>Required</th><th>Description</th></tr>
+    <tr><td><code>playerId</code></td><td>yes*</td><td>Your id for this person: 1-64 characters, letters, digits and <code>_ . : @ -</code>. Always the same id for the same person. We treat it as an opaque string.</td></tr>
+    <tr><td><code>displayName</code></td><td>no</td><td>Shown in rankings and winner lists (1-40 characters). Updated every time you send a new one.</td></tr>
+    <tr><td><code>avatarUrl</code></td><td>no</td><td>An <code>https</code> picture address (kept for rankings).</td></tr>
+  </table></div>
+  <p>* Required unless the game has <b>guest login</b> switched on.</p>
+  <ul>
+    <li>A player belongs to <b>one game</b>: the same person in two of your games has two balances and two histories.</li>
+    <li>The player exists as soon as you create the session (or credit coins), so you can credit coins <i>before</i> the first time they open the game.</li>
+    <li><b>Guest login</b> (game → Settings, off by default) lets players type their own name. It is meant for demos. With it off, the game never shows a name screen and the typed-name endpoint is closed.</li>
+  </ul>
+  <div class="note">Never send a password or a secret as <code>playerId</code>. Use an id that is safe to appear in your own logs.</div>
+</section>
+
+<section id="wallet">
+  <h2>Coins (wallet)</h2>
+  <p>Each game has a <b>wallet mode</b> (game → Settings):</p>
+  <div class="tablewrap"><table>
+    <tr><th>Mode</th><th>Where coins come from</th><th>Use it for</th></tr>
+    <tr><td><b>Demo wallet</b> (default)</td><td>New players start with the <i>starting balance</i> from Customize and can take a free refill when they run out.</td><td>Demos, trying the game, free-to-play</td></tr>
+    <tr><td><b>Managed by my server</b></td><td>New players start with <b>0</b>. Your server adds coins with <code>credit</code> and removes them with <code>debit</code>. The free refill is off.</td><td>Real coin economies you control</td></tr>
+  </table></div>
+
+  <h3>Typical flows</h3>
+  <ul>
+    <li><b>A player buys coins in your app:</b> after your payment succeeds, call <code>credit</code> with a <code>reference</code> that is unique per order (for example <code>order-1001</code>). The game shows the new balance within a second or two, even while it is open.</li>
+    <li><b>A player cashes out:</b> call <code>debit</code>. If they have less, you get <code>402 insufficient_balance</code> and nothing moves.</li>
+    <li><b>A player runs out of coins in the game:</b> the game shows a message and sends the <code>needCoins</code> <a href="#events">event</a> to your page or app, so you can open your own shop.</li>
+    <li><b>You want to reconcile:</b> read <code>GET …/transactions</code>. Every coin movement is listed, including the bets and wins the game made.</li>
+  </ul>
+
+  <h3>Safe retries: <code>reference</code></h3>
+  <p>Networks fail. Every <code>credit</code> and <code>debit</code> needs a <code>reference</code> that is unique per operation. If you send the same operation again with the same reference, you get the <b>same answer</b> (<code>"duplicate": true</code>) and <b>coins never move twice</b>. If you reuse a reference for a different amount, player or direction you get <code>409 reference_conflict</code>.</p>
+  <div class="note">So your rule is simple: <b>retry until you get an answer</b>. A timeout, a 5xx or a dropped connection are all safe to retry with the same reference.</div>
+  <div class="warn">If your players' coins are real money, your licensing, auditing and responsible-gaming duties apply to you. We provide the game and the ledger; compliance stays with you.</div>
+</section>
+
+<section id="webhooks">
+  <h2>Webhooks</h2>
+  <p>We can call your server when something happens, so you do not have to poll. Set the address and copy the <b>signing secret</b> under <b>API key &amp; webhooks</b> (one address per account). Press <b>Send test</b> to see a delivery arrive.</p>
+
+  <h3>What we send</h3>
+  <p><code>POST</code> to your address, <code>Content-Type: application/json</code>, body:</p>
+<pre><code>{
+  "id": "evt_8fKq2...",            // unique: store it and ignore repeats
+  "type": "round.settled",
+  "createdAt": "2026-11-12T09:30:12.000Z",
+  "gameId": "lic_AbC123xYz",
+  "data": {
+    "game": "lucky-wheel",
+    "round": 1042,
+    "result": ["seven", "plum"],     // winning option codes
+    "playerCount": 2,
+    "truncated": false,              // true when more than 1000 players; use /transactions for the rest
+    "players": [ { "playerId": "user-8841", "bet": 30000, "win": 240000 } ]
+  }
+}</code></pre>
+  <div class="tablewrap"><table>
+    <tr><th>Event</th><th>When</th></tr>
+    <tr><td><code>round.settled</code></td><td>A round finished and was paid. Only rounds with real bets; dashboard-preview players are never included.</td></tr>
+    <tr><td><code>webhook.test</code></td><td>You pressed <i>Send test</i>.</td></tr>
+  </table></div>
+
+  <h3>Verify the signature</h3>
+  <p>Headers on every request:</p>
+  <div class="tablewrap"><table>
+    <tr><th>Header</th><th>Value</th></tr>
+    <tr><td><code>X-Minigame-Event</code></td><td>The event type</td></tr>
+    <tr><td><code>X-Minigame-Delivery</code></td><td>The event id (same as <code>id</code> in the body)</td></tr>
+    <tr><td><code>X-Minigame-Timestamp</code></td><td>Unix seconds when we sent it</td></tr>
+    <tr><td><code>X-Minigame-Signature</code></td><td><code>v1=</code> + hex HMAC-SHA256 of <code>"&lt;timestamp&gt;.&lt;raw body&gt;"</code> using your signing secret</td></tr>
+  </table></div>
+  <ol>
+    <li>Take the <b>raw</b> request body (before any JSON parsing).</li>
+    <li>Compute <code>HMAC-SHA256(secret, timestamp + "." + rawBody)</code> as lowercase hex and prepend <code>v1=</code>.</li>
+    <li>Compare it to <code>X-Minigame-Signature</code> with a constant-time comparison.</li>
+    <li>Reject the request if the timestamp is more than 5 minutes old (protects against replays).</li>
+    <li>Answer with any <b>2xx</b> status. Do the heavy work afterwards.</li>
+  </ol>
+  <div class="tabs" id="hooktabs"></div>
+  <div id="hook"></div>
+
+  <h3>Retries</h3>
+  <p>Any answer that is not 2xx, or no answer within 8 seconds, counts as a failure. We retry after <b>10 s, 1 min, 5 min, 30 min, 2 h and 6 h</b> (seven attempts in total), then give up. Every attempt is visible under <b>API key &amp; webhooks → Recent deliveries</b>, where you can also press <i>Retry now</i>. Because a delivery can arrive more than once, treat <code>id</code> as an idempotency key.</p>
+  <div class="note">The address must be <code>https</code> and must not point to a private or local network. Redirects are not followed.</div>
 </section>
 
 <section id="api">
   <h2>API reference</h2>
-  <p>Base URL: <code>{{HOST}}</code>. Send the key as <code>Authorization: Bearer YOUR_API_KEY</code>. Bodies are JSON.</p>
+  <p>Base URL: <code>{{HOST}}</code>. Send the key as <code>Authorization: Bearer YOUR_API_KEY</code>. Bodies are JSON. All amounts are <b>whole numbers</b> (1 to 1,000,000,000,000).</p>
 
   <h3><span class="pill">POST</span> /api/v1/sessions</h3>
-  <p>Create a 15-minute play link for one of your games.</p>
-  <table>
+  <p>Create a 15-minute play link for one player of one of your games.</p>
+  <div class="tablewrap"><table>
     <tr><th>Body field</th><th>Required</th><th>Description</th></tr>
-    <tr><td><code>gameId</code></td><td>yes</td><td>The game ID (<code>lic_…</code>) from your dashboard or <code>GET /api/v1/games</code>.</td></tr>
-    <tr><td><code>username</code></td><td>no</td><td>3-20 characters: letters, digits, <code>_ . -</code>. When sent, the player skips the username screen and is that user. Use it when your app already knows the user.</td></tr>
-  </table>
+    <tr><td><code>gameId</code></td><td>yes</td><td>The game ID (<code>lic_…</code>).</td></tr>
+    <tr><td><code>playerId</code></td><td>yes*</td><td>Your id for the person. See <a href="#identity">Players</a>. (<code>username</code> is accepted as an older name for it.)</td></tr>
+    <tr><td><code>displayName</code></td><td>no</td><td>1-40 characters.</td></tr>
+    <tr><td><code>avatarUrl</code></td><td>no</td><td><code>https</code> address.</td></tr>
+  </table></div>
 <pre><code>POST {{HOST}}/api/v1/sessions
 Authorization: Bearer mgs_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Content-Type: application/json
 
-{ "gameId": "lic_AbC123xYz", "username": "maria_01" }
+{ "gameId": "lic_AbC123xYz", "playerId": "user-8841", "displayName": "Maria" }
 
 200 OK
 {
@@ -84,31 +188,75 @@ Content-Type: application/json
   "sessionToken": "eyJ0...",
   "expiresIn": 900,
   "gameId": "lic_AbC123xYz",
-  "game": "lucky-wheel"
+  "game": "lucky-wheel",
+  "playerId": "user-8841"
 }</code></pre>
 
   <h3><span class="pill">GET</span> /api/v1/games</h3>
-  <p>List the games your key can open.</p>
+  <p>List the games your key can use, with their identity and wallet settings.</p>
 <pre><code>200 OK
-{ "games": [ { "gameId": "lic_AbC123xYz", "name": "Lucky Wheel 77 #1", "game": "lucky-wheel", "status": "active" } ] }</code></pre>
+{ "games": [ { "gameId": "lic_AbC123xYz", "name": "Lucky Wheel 77 #1", "game": "lucky-wheel", "status": "active",
+               "guestLogin": false, "walletMode": "managed" } ] }</code></pre>
+
+  <h3><span class="pill">GET</span> /api/v1/games/{gameId}/players/{playerId}</h3>
+  <p>A player's balance. <code>404 player_not_found</code> if that id has never been seen in this game.</p>
+<pre><code>200 OK
+{ "playerId": "user-8841", "displayName": "Maria", "balance": 100000, "createdAt": 1794420000000, "lastSeen": 1794420500000 }</code></pre>
+
+  <h3><span class="pill">POST</span> /api/v1/games/{gameId}/players/{playerId}/credit</h3>
+  <p>Add coins. Creates the player if needed. Requires the game's wallet mode to be <i>managed</i>.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Body field</th><th>Required</th><th>Description</th></tr>
+    <tr><td><code>amount</code></td><td>yes</td><td>Whole number of coins.</td></tr>
+    <tr><td><code>reference</code></td><td>yes</td><td>Unique id of this operation (1-100 characters: letters, digits, <code>_ . : @ -</code>). Makes retries safe.</td></tr>
+    <tr><td><code>note</code></td><td>no</td><td>Up to 200 characters, kept in the history.</td></tr>
+    <tr><td><code>displayName</code></td><td>no</td><td>Sets the player's name if they are new or it changed.</td></tr>
+  </table></div>
+<pre><code>200 OK
+{ "playerId": "user-8841", "balance": 100000, "transactionId": "66f1c0...", "duplicate": false }</code></pre>
+
+  <h3><span class="pill">POST</span> /api/v1/games/{gameId}/players/{playerId}/debit</h3>
+  <p>Remove coins (cash-out). Same body as <code>credit</code> (without <code>displayName</code>). <code>402 insufficient_balance</code> if the player has less; the response includes their current <code>balance</code> and nothing moves.</p>
+
+  <h3><span class="pill">GET</span> /api/v1/games/{gameId}/players/{playerId}/transactions?limit=50&amp;before=ID</h3>
+  <p>The player's history, newest first, including coins the game moved. Pass the returned <code>nextBefore</code> as <code>before</code> to get the next page.</p>
+<pre><code>200 OK
+{ "playerId": "user-8841", "balance": 70000, "nextBefore": null,
+  "transactions": [
+    { "id": "66f1...", "type": "win",    "amount": 240000, "balanceAfter": 310000, "reference": "win:wr_...:ply_...", "note": "Round 1042", "createdAt": 1794420600000 },
+    { "id": "66f0...", "type": "bet",    "amount": -30000,  "balanceAfter": 70000,  "reference": null, "note": "Round 1042", "createdAt": 1794420580000 },
+    { "id": "66ef...", "type": "credit", "amount": 100000,  "balanceAfter": 100000, "reference": "order-1001", "note": "bought 100k coins", "createdAt": 1794420500000 }
+  ] }</code></pre>
+  <p><code>type</code> is one of <code>credit</code>, <code>debit</code> (from your server), <code>bet</code>, <code>win</code> (from the game), <code>starting</code>, <code>refill</code> (demo wallet).</p>
 
   <h3>Errors</h3>
-  <table>
-    <tr><th>Status</th><th>Meaning</th><th>Fix</th></tr>
-    <tr><td>400</td><td><code>gameId is required</code> or invalid <code>username</code></td><td>Send <code>gameId</code>; usernames are 3-20 chars of letters, digits, <code>_ . -</code></td></tr>
-    <tr><td>401</td><td>Missing or wrong API key</td><td>Check the <code>Authorization</code> header. A rotated key stops working immediately.</td></tr>
-    <tr><td>403</td><td>The game is not active</td><td>Contact support</td></tr>
-    <tr><td>404</td><td>Game not found for this key</td><td>The game ID belongs to another account, or has a typo</td></tr>
-    <tr><td>429</td><td>Rate limit (300 sessions per minute per IP)</td><td>Create a session only when a player opens the game</td></tr>
-  </table>
+  <p>Every error has the same shape: <code>{ "error": "human readable message", "code": "machine_code" }</code>. Program against <code>code</code>.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Status</th><th><code>code</code></th><th>Meaning and fix</th></tr>
+    <tr><td>400</td><td><code>game_id_required</code></td><td>Send <code>gameId</code>.</td></tr>
+    <tr><td>400</td><td><code>player_id_required</code></td><td>Send <code>playerId</code>, or allow guest login for the game.</td></tr>
+    <tr><td>400</td><td><code>invalid_player_id</code>, <code>invalid_displayName</code>, <code>invalid_avatarUrl</code></td><td>Check the allowed characters and lengths.</td></tr>
+    <tr><td>400</td><td><code>invalid_amount</code>, <code>reference_required</code>, <code>invalid_note</code></td><td>Amount must be a whole number; every money call needs a <code>reference</code>.</td></tr>
+    <tr><td>401</td><td><code>invalid_api_key</code></td><td>Missing or wrong key. A rotated key stops working immediately.</td></tr>
+    <tr><td>402</td><td><code>insufficient_balance</code></td><td>The debit is larger than the balance. Nothing moved.</td></tr>
+    <tr><td>403</td><td><code>game_inactive</code></td><td>The game is switched off. Contact support.</td></tr>
+    <tr><td>404</td><td><code>game_not_found</code>, <code>player_not_found</code></td><td>The game ID belongs to another account, or the player was never seen.</td></tr>
+    <tr><td>409</td><td><code>wallet_not_enabled</code></td><td>Switch the game to <i>managed wallet</i> in Settings.</td></tr>
+    <tr><td>409</td><td><code>reference_conflict</code></td><td>That reference was already used for a different operation. Use a new one.</td></tr>
+    <tr><td>429</td><td><code>rate_limited</code></td><td>Slow down. Limits: 300 sessions and 600 wallet calls per minute.</td></tr>
+  </table></div>
 </section>
 
 <section id="server">
-  <h2>Server examples: create the session</h2>
+  <h2>Server examples</h2>
   <p>Replace <code>GAME_ID</code> with your game ID. Keep the API key in an environment variable named <code>MINIGAME_API_KEY</code>. Your front-end calls <i>your</i> <code>/game-session</code> endpoint, never ours.</p>
+  <h3>Create the session</h3>
   <div class="tabs" id="srvtabs"></div>
   <div id="srv"></div>
-  <div class="note"><b>Many games, one key.</b> Just send a different <code>gameId</code>. You never manage more than one secret.</div>
+  <h3>Add coins after a sale</h3>
+  <div class="tabs" id="waltabs"></div>
+  <div id="wal"></div>
+  <div class="note"><b>Many games, one key.</b> Just send a different game ID. You never manage more than one secret.</div>
   <div class="note">Create a new session each time a player opens the game. Do not cache or reuse a <code>playUrl</code> for more than a few minutes.</div>
 </section>
 
@@ -124,41 +272,62 @@ Content-Type: application/json
 <section id="events">
   <h2>Events from the game</h2>
   <p>Every event is <code>{ source: "minigames", type, data }</code>. Websites get them through the SDK's <code>onEvent</code> (or <code>window.addEventListener('message')</code>), Flutter through the <code>MiniGames</code> JavaScript channel.</p>
-  <table>
+  <div class="tablewrap"><table>
     <tr><th>type</th><th>data</th><th>When</th></tr>
-    <tr><td><code>login</code></td><td><code>{ username, balance }</code></td><td>The player is signed in</td></tr>
+    <tr><td><code>login</code></td><td><code>{ username, balance }</code></td><td>The player is in the game (<code>username</code> is the display name)</td></tr>
     <tr><td><code>ready</code></td><td><code>{ game }</code></td><td>The game is on screen</td></tr>
-    <tr><td><code>round</code></td><td><code>{ game, round, bet, win, hits, balance }</code></td><td>A round was paid. <code>hits</code> lists the winning option codes (more than one when the bonus triggers).</td></tr>
+    <tr><td><code>round</code></td><td><code>{ game, round, bet, win, hits, balance }</code></td><td>A round was paid. <code>hits</code> lists the winning option codes.</td></tr>
+    <tr><td><code>needCoins</code></td><td><code>{ balance }</code></td><td>Managed wallet only: the player tried to bet with too few coins. Open your own shop.</td></tr>
     <tr><td><code>exit</code></td><td><code>{}</code></td><td>The player pressed the back button. Close the game or navigate away.</td></tr>
     <tr><td><code>error</code></td><td><code>{ message }</code></td><td>Web SDK only: your session endpoint failed</td></tr>
-  </table>
-  <p>Events are for your UI (analytics, your own rewards). <b>The authoritative record of every round is on our server and visible in your dashboard.</b></p>
+  </table></div>
+  <p>Events are for your UI (analytics, opening a shop). <b>The authoritative record is on our server</b>: use the <a href="#webhooks">webhooks</a> or the <a href="#api">transactions</a> API for anything that matters.</p>
 </section>
 
 <section id="custom">
   <h2>Customizing a game</h2>
   <p>Open <b>My games → your game → Customize</b>. Every visual is an <b>asset slot</b>: drag a file onto it, save, and the live preview updates.</p>
-  <table>
+  <div class="tablewrap"><table>
     <tr><th>Area</th><th>You can change</th></tr>
     <tr><td><b>Look</b></td><td>Background (image, SVG or <b>video</b>), wheel frame and disc, hub, ribbon, bet boxes, every button, logo, avatar, colors</td></tr>
     <tr><td><b>Animations</b></td><td>Ambient loop behind the wheel, win celebration, lucky-77 celebration: <b>video (MP4/WebM)</b>, sprite sheet or image</td></tr>
     <tr><td><b>Sound</b></td><td>Background music, spin, tick, chip, win and lose sounds (MP3 / OGG / WAV / M4A)</td></tr>
-    <tr><td><b>Rules</b></td><td>Bet options (name, multiplier, icon, badge), wheel layout and odds, bonus chance, chips and their values, starting balance, max bet, round timing</td></tr>
+    <tr><td><b>Rules</b></td><td>Bet options (name, multiplier, icon, badge), wheel layout and odds, bonus chance, chips and their values, starting balance (demo wallet), max bet, round timing</td></tr>
     <tr><td><b>Texts</b></td><td>Every label, the how-to-play steps and all popup titles</td></tr>
-  </table>
+  </table></div>
   <p>Upload limits: images 3 MB, SVG 300 KB (scripts and external links are rejected), video 10 MB, audio 4 MB. Transparent PNG/WebP/SVG work best for icons; WebM keeps transparency for effects. Anything you do not upload keeps the default.</p>
 </section>
 
-<section id="players">
+<section id="results">
   <h2>Players &amp; results</h2>
-  <p>Open <b>My games → your game → Players &amp; results</b> to see, live: total players, rounds, wagered and paid out, payout rate; rounds per day and top winners; every player with balance, rounds, wagered, won and last seen (searchable, sortable); a live feed of results (for example <i>"Round 1042: Lucky 77. Bet Lucky 77 30000"</i>) filterable per player; and CSV export. Players you test with from the Customize preview are not counted.</p>
+  <p>Open <b>My games → your game → Players &amp; results</b> to see, live: total players, rounds, wagered and paid out, payout rate; rounds per day and top winners; every player with their id, balance, rounds, wagered, won and last seen (searchable, sortable); a live feed of results filterable per player; every coin movement of a player (<i>Coins</i> button); and CSV export. Players you test with from the Customize preview are not counted.</p>
+</section>
+
+<section id="checklist">
+  <h2>Integration checklist</h2>
+  <p>Before you go live:</p>
+  <ul class="check">
+    <li>The API key is only on your server (an environment variable), never in website code, an app or a repository.</li>
+    <li>Your <code>/game-session</code> endpoint checks that the caller is logged in <i>to your system</i> before it asks us for a session.</li>
+    <li>You send a stable <code>playerId</code> (the same id every time for the same person).</li>
+    <li>Guest login is <b>off</b> for the live game; wallet mode matches your economy.</li>
+    <li>Every <code>credit</code> and <code>debit</code> has a unique <code>reference</code> (for example your order id) and is retried on timeouts.</li>
+    <li>You handle <code>402 insufficient_balance</code> and <code>409 reference_conflict</code> explicitly.</li>
+    <li>Your webhook endpoint verifies the signature on the raw body, checks the timestamp, answers 2xx quickly and ignores repeated <code>id</code>s.</li>
+    <li>You use <b>Send test</b> and see <i>delivered</i> in the delivery log.</li>
+    <li>You listen for the <code>needCoins</code> event and open your shop.</li>
+    <li>"Allowed websites" lists your sites (optional hardening).</li>
+    <li>You know how to rotate the key (dashboard → API key &amp; webhooks).</li>
+  </ul>
 </section>
 
 <section id="security">
   <h2>Security</h2>
   <ul>
     <li>Keep the API key in an environment variable on your <b>server</b>. Never in website JavaScript, a mobile app, a public repository or a screenshot.</li>
-    <li>Lost or leaked? Dashboard → <b>API key → Rotate key</b>. The old key stops working immediately for all your games, and the new one works for all of them.</li>
+    <li>Lost or leaked? Dashboard → <b>API key &amp; webhooks → Rotate key</b>. The old key stops working immediately for all your games, and the new one works for all of them.</li>
+    <li>We never see your users' passwords. The player id you send is the identity: only send ids for users <i>your</i> system has authenticated.</li>
+    <li>Webhooks are signed with a secret only you and we know; verify them and reject old timestamps.</li>
     <li>Optionally list your websites under <b>game → Settings → Allowed websites</b>. Browsers then refuse to show the game anywhere else (mobile WebViews are not affected).</li>
     <li>Results are decided on our server with a cryptographically secure random generator. Players cannot change a result, and the odds are never sent to the game.</li>
     <li>Play links expire after 15 minutes. Treat each one as belonging to one player.</li>
@@ -168,20 +337,23 @@ Content-Type: application/json
 
 <section id="help">
   <h2>Troubleshooting</h2>
-  <table>
+  <div class="tablewrap"><table>
     <tr><th>Symptom</th><th>Cause and fix</th></tr>
-    <tr><td><code>401 Invalid API key</code></td><td>Header must be exactly <code>Authorization: Bearer mgs_…</code>. If you rotated the key, update your server.</td></tr>
-    <tr><td><code>400 gameId is required</code></td><td>Send <code>{"gameId":"lic_…"}</code> in the JSON body (Content-Type <code>application/json</code>).</td></tr>
-    <tr><td><code>404 Game not found for this API key</code></td><td>The ID belongs to another account. Copy it again from the dashboard or <code>GET /api/v1/games</code>.</td></tr>
+    <tr><td><code>401 invalid_api_key</code></td><td>Header must be exactly <code>Authorization: Bearer mgs_…</code>. If you rotated the key, update your server.</td></tr>
+    <tr><td><code>400 player_id_required</code></td><td>Send <code>playerId</code> with the session request.</td></tr>
+    <tr><td><code>409 wallet_not_enabled</code></td><td>Game → Settings → <i>Managed by my server</i>, then Save.</td></tr>
+    <tr><td>Balance in the game looks stale</td><td>The game refreshes every second. If it never changes, check that you credited the same <code>playerId</code> and game ID the session uses.</td></tr>
+    <tr><td>Webhook shows <i>pending</i> with an error</td><td>Your server did not answer 2xx. Fix it and press <i>Retry now</i>, or wait for the next automatic attempt.</td></tr>
+    <tr><td>Webhook signature never matches</td><td>You must hash the <b>raw</b> body, not re-serialized JSON, with the timestamp header and a <code>.</code> in between, using the secret shown in the dashboard.</td></tr>
     <tr><td>Game shows "Session expired"</td><td>The link is older than 15 minutes. Call your endpoint again (the SDK's <code>reload()</code> does this).</td></tr>
     <tr><td>Blank frame on your site</td><td>Check "Allowed websites" in the game settings, and that your page uses https.</td></tr>
     <tr><td>No sound</td><td>Browsers need one tap before audio can play. The first tap on the game unlocks it.</td></tr>
-  </table>
+  </table></div>
   <h3>FAQ</h3>
-  <p><b>Do my players need an account?</b> No, only a username. Pass <code>username</code> when you create the session to skip even that.</p>
-  <p><b>Is the in-game currency real money?</b> No. It is play currency tracked per player. React to <code>round</code> events if you want to connect it to something real.</p>
-  <p><b>Can two players share a username?</b> Not inside the same game. The same name can exist in a different game.</p>
-  <p><b>A player ran out of coins.</b> The game offers a one-tap free refill back to the starting balance.</p>
+  <p><b>Do my players need an account with us?</b> No. They never see us: your server vouches for them with your own id.</p>
+  <p><b>Is the in-game currency real money?</b> It is whatever you decide: you sell coins in your own system and credit them. We only keep the balance and the history.</p>
+  <p><b>Can two people share a player id?</b> Not inside the same game: the id <i>is</i> the person. The same id in another game is a separate player.</p>
+  <p><b>A player ran out of coins.</b> Demo wallet: the game offers a free refill. Managed wallet: the game sends <code>needCoins</code> so you can sell them more.</p>
 </section>
 
 </main>
@@ -196,6 +368,9 @@ import express from 'express';
 const app = express();
 
 app.post('/game-session', async (req, res) => {
+  const user = req.user;                       // YOUR login system decides who this is
+  if (!user) return res.status(401).end();
+
   const r = await fetch('__HOST__/api/v1/sessions', {
     method: 'POST',
     headers: {
@@ -204,10 +379,11 @@ app.post('/game-session', async (req, res) => {
     },
     body: JSON.stringify({
       gameId: '__GAME__',
-      username: req.user?.username,   // optional: skips the username screen
+      playerId: String(user.id),               // your own id for this person
+      displayName: user.name,                  // optional
     }),
   });
-  res.status(r.status).json(await r.json());   // { playUrl, sessionToken, expiresIn, gameId, game }
+  res.status(r.status).json(await r.json());   // { playUrl, sessionToken, expiresIn, gameId, game, playerId }
 });
 
 app.listen(3000);`],
@@ -221,12 +397,11 @@ API = "__HOST__"
 
 @app.post("/game-session")
 def game_session():
-    payload = {"gameId": "__GAME__"}
-    # payload["username"] = current_user.name      # optional: skips the username screen
+    user = current_user()                          # YOUR login system decides who this is
     r = requests.post(
         API + "/api/v1/sessions",
         headers={"Authorization": "Bearer " + os.environ["MINIGAME_API_KEY"]},
-        json=payload,
+        json={"gameId": "__GAME__", "playerId": str(user.id), "displayName": user.name},
         timeout=10,
     )
     return jsonify(r.json()), r.status_code        # {"playUrl": ..., "expiresIn": 900, ...}`],
@@ -241,13 +416,13 @@ public class MiniGameClient {
     private static final String API = "__HOST__";
     private static final String GAME_ID = "__GAME__";
 
+    private static String json(String s) { return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; }
+
     /** Returns the JSON answer ({"playUrl": "...", ...}). Hand it to your front-end unchanged. */
-    public static String createSession(String username) throws Exception {
-        // username is optional (3-20 chars: letters, digits, _ . -). Anything else is ignored.
-        boolean ok = username != null && username.matches("[A-Za-z0-9_.-]{3,20}");
-        String body = ok
-            ? "{\"gameId\":\"" + GAME_ID + "\",\"username\":\"" + username + "\"}"
-            : "{\"gameId\":\"" + GAME_ID + "\"}";
+    public static String createSession(String playerId, String displayName) throws Exception {
+        // playerId: YOUR id for this person (1-64 chars: letters, digits, _ . : @ -)
+        String body = "{\"gameId\":" + json(GAME_ID) + ",\"playerId\":" + json(playerId)
+                    + ",\"displayName\":" + json(displayName) + "}";
         HttpRequest req = HttpRequest.newBuilder(URI.create(API + "/api/v1/sessions"))
             .header("Authorization", "Bearer " + System.getenv("MINIGAME_API_KEY"))
             .header("Content-Type", "application/json")
@@ -257,7 +432,7 @@ public class MiniGameClient {
     }
 
     public static void main(String[] args) throws Exception {          // quick test: java MiniGameClient.java
-        System.out.println(createSession("maria_01"));
+        System.out.println(createSession("user-8841", "Maria"));
     }
 }
 
@@ -267,28 +442,199 @@ public class MiniGameClient {
 // class GameController {
 //     @PostMapping(value = "/game-session", produces = "application/json")
 //     String session(java.security.Principal user) throws Exception {
-//         return MiniGameClient.createSession(user == null ? null : user.getName());
+//         return MiniGameClient.createSession(user.getName(), user.getName());
 //     }
 // }`],
     php: ['PHP', String.raw`<?php
 // Runs on YOUR server. Keep the key in an environment variable.
+$user = current_user();   // YOUR login system decides who this is
 $ch = curl_init('__HOST__/api/v1/sessions');
 curl_setopt_array($ch, [
   CURLOPT_POST => true,
   CURLOPT_RETURNTRANSFER => true,
   CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . getenv('MINIGAME_API_KEY'), 'Content-Type: application/json'],
-  CURLOPT_POSTFIELDS => json_encode(['gameId' => '__GAME__', 'username' => $currentUser ?? null]),
+  CURLOPT_POSTFIELDS => json_encode(['gameId' => '__GAME__', 'playerId' => (string)$user->id, 'displayName' => $user->name]),
 ]);
 header('Content-Type: application/json');
-echo curl_exec($ch);   // { playUrl, sessionToken, expiresIn, gameId, game }`],
+echo curl_exec($ch);   // { playUrl, sessionToken, expiresIn, gameId, game, playerId }`],
     curl: ['cURL', String.raw`curl -X POST __HOST__/api/v1/sessions \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"gameId":"__GAME__","username":"optional_player_name"}'
+  -d '{"gameId":"__GAME__","playerId":"user-8841","displayName":"Maria"}'
 
-# list the games your key can open
+# list the games your key can use
 curl __HOST__/api/v1/games -H "Authorization: Bearer YOUR_API_KEY"`],
   };
+
+  const W = {
+    curl: ['cURL', String.raw`# Add coins after the player bought them in YOUR system (managed wallet).
+# "reference" makes a retry safe: the same reference gives the same answer and never moves coins twice.
+curl -X POST __HOST__/api/v1/games/__GAME__/players/user-8841/credit \
+  -H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" \
+  -d '{"amount":100000,"reference":"order-1001","note":"bought 100k coins"}'
+# -> {"playerId":"user-8841","balance":100000,"transactionId":"...","duplicate":false}
+
+# Remove coins (cash-out). 402 insufficient_balance when the player has less.
+curl -X POST __HOST__/api/v1/games/__GAME__/players/user-8841/debit \
+  -H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" \
+  -d '{"amount":40000,"reference":"cashout-77"}'
+
+# Balance and history
+curl __HOST__/api/v1/games/__GAME__/players/user-8841 -H "Authorization: Bearer YOUR_API_KEY"
+curl "__HOST__/api/v1/games/__GAME__/players/user-8841/transactions?limit=20" -H "Authorization: Bearer YOUR_API_KEY"`],
+    node: ['Node.js', String.raw`// Call this from your own order flow, after the payment succeeded.
+async function creditCoins(userId, amount, orderId) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const r = await fetch('__HOST__/api/v1/games/__GAME__/players/' + encodeURIComponent(userId) + '/credit', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + process.env.MINIGAME_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, reference: 'order-' + orderId }),   // same reference = safe to retry
+      });
+      const body = await r.json();
+      if (r.ok) return body.balance;
+      if (r.status < 500) throw new Error(body.code + ': ' + body.error);  // a real answer: do not retry (e.g. wallet_not_enabled)
+    } catch (e) {
+      if (e.message && /^[a-z_]+: /.test(e.message)) throw e;               // our error, not a network error
+    }
+    if (attempt >= 5) throw new Error('could not reach the game server');
+    await new Promise(r => setTimeout(r, 500 * attempt));                   // network or 5xx: try again
+  }
+}`],
+    python: ['Python', String.raw`import os, time, requests
+
+def credit_coins(user_id, amount, order_id):
+    url = "__HOST__/api/v1/games/__GAME__/players/" + str(user_id) + "/credit"
+    for attempt in range(1, 6):
+        try:
+            r = requests.post(
+                url,
+                headers={"Authorization": "Bearer " + os.environ["MINIGAME_API_KEY"]},
+                json={"amount": amount, "reference": f"order-{order_id}"},   # same reference = safe to retry
+                timeout=10,
+            )
+            if r.ok:
+                return r.json()["balance"]
+            if r.status_code < 500:
+                body = r.json()
+                raise RuntimeError(body["code"] + ": " + body["error"])      # a real answer: do not retry
+        except requests.RequestException:
+            pass                                                             # network problem: try again
+        time.sleep(0.5 * attempt)
+    raise RuntimeError("could not reach the game server")`],
+    java: ['Java', String.raw`// Java 11+. Credit coins after a sale; the same reference can be sent again safely.
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+public class MiniGameWallet {
+    private static final HttpClient HTTP = HttpClient.newHttpClient();
+
+    public static String credit(String playerId, long amount, String reference) throws Exception {
+        String body = "{\"amount\":" + amount + ",\"reference\":\"" + reference + "\"}";
+        HttpRequest req = HttpRequest.newBuilder(URI.create("__HOST__/api/v1/games/__GAME__/players/" + playerId + "/credit"))
+            .header("Authorization", "Bearer " + System.getenv("MINIGAME_API_KEY"))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+        HttpResponse<String> res = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() >= 500) throw new RuntimeException("try again: " + res.statusCode());   // retry with the same reference
+        return res.body();   // {"playerId":"...","balance":100000,"transactionId":"...","duplicate":false}
+    }
+}`],
+    php: ['PHP', String.raw`<?php
+function credit_coins(string $userId, int $amount, string $orderId): array {
+    $ch = curl_init('__HOST__/api/v1/games/__GAME__/players/' . rawurlencode($userId) . '/credit');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . getenv('MINIGAME_API_KEY'), 'Content-Type: application/json'],
+        CURLOPT_POSTFIELDS => json_encode(['amount' => $amount, 'reference' => 'order-' . $orderId]),   // same reference = safe to retry
+    ]);
+    $body = json_decode(curl_exec($ch), true);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    if ($status >= 500 || $status === 0) { throw new RuntimeException('try again'); }
+    return $body;   // ['playerId' => ..., 'balance' => ..., 'transactionId' => ..., 'duplicate' => false]
+}`],
+  };
+
+  const H = {
+    node: ['Node.js', String.raw`import crypto from 'node:crypto';
+import express from 'express';
+const app = express();
+
+// IMPORTANT: verify the RAW body, so do not parse it as JSON before checking the signature.
+app.post('/minigame-webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const ts = req.header('X-Minigame-Timestamp');
+  const expected = 'v1=' + crypto.createHmac('sha256', process.env.MINIGAME_WEBHOOK_SECRET)
+    .update(ts + '.' + req.body.toString('utf8')).digest('hex');
+  const given = req.header('X-Minigame-Signature') || '';
+  const ok = given.length === expected.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+  if (!ok || Math.abs(Date.now() / 1000 - Number(ts)) > 300) return res.status(400).end();   // bad signature or too old
+
+  const event = JSON.parse(req.body.toString('utf8'));   // { id, type, createdAt, gameId, data }
+  // event.id is unique: store it and skip repeats (a delivery can arrive more than once)
+  if (event.type === 'round.settled') console.log('round', event.data.round, event.data.players);
+  res.status(200).end();                                  // any 2xx means "received"
+});
+
+app.listen(3000);`],
+    python: ['Python', String.raw`import hashlib, hmac, os, time
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.post("/minigame-webhook")
+def minigame_webhook():
+    raw = request.get_data()                       # the RAW body, exactly as received
+    ts = request.headers.get("X-Minigame-Timestamp", "")
+    expected = "v1=" + hmac.new(os.environ["MINIGAME_WEBHOOK_SECRET"].encode(),
+                                ts.encode() + b"." + raw, hashlib.sha256).hexdigest()
+    given = request.headers.get("X-Minigame-Signature", "")
+    if not hmac.compare_digest(given, expected) or abs(time.time() - int(ts or 0)) > 300:
+        return "", 400                             # bad signature or too old
+    event = request.get_json()                     # { id, type, createdAt, gameId, data }
+    # event["id"] is unique: store it and skip repeats
+    return "", 200`],
+    java: ['Java', String.raw`// Java 17+. Works in any framework: you only need the RAW body, the two headers and your secret.
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+
+public class MiniGameWebhook {
+    public static boolean verify(String secret, String timestamp, String rawBody, String signatureHeader) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        String expected = "v1=" + HexFormat.of().formatHex(mac.doFinal((timestamp + "." + rawBody).getBytes(StandardCharsets.UTF_8)));
+        boolean fresh = Math.abs(System.currentTimeMillis() / 1000 - Long.parseLong(timestamp)) <= 300;
+        return fresh && MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), signatureHeader.getBytes(StandardCharsets.UTF_8));
+    }
+}
+
+// Spring Boot: take the body as a String and the headers with @RequestHeader:
+// @PostMapping("/minigame-webhook")
+// ResponseEntity<Void> hook(@RequestBody String raw,
+//         @RequestHeader("X-Minigame-Timestamp") String ts,
+//         @RequestHeader("X-Minigame-Signature") String sig) throws Exception {
+//     if (!MiniGameWebhook.verify(System.getenv("MINIGAME_WEBHOOK_SECRET"), ts, raw, sig)) return ResponseEntity.badRequest().build();
+//     return ResponseEntity.ok().build();
+// }`],
+    php: ['PHP', String.raw`<?php
+$raw = file_get_contents('php://input');                         // the RAW body
+$ts = $_SERVER['HTTP_X_MINIGAME_TIMESTAMP'] ?? '';
+$given = $_SERVER['HTTP_X_MINIGAME_SIGNATURE'] ?? '';
+$expected = 'v1=' . hash_hmac('sha256', $ts . '.' . $raw, getenv('MINIGAME_WEBHOOK_SECRET'));
+if (!hash_equals($expected, $given) || abs(time() - (int)$ts) > 300) { http_response_code(400); exit; }
+
+$event = json_decode($raw, true);   // id, type, createdAt, gameId, data
+// $event['id'] is unique: store it and skip repeats
+http_response_code(200);`],
+  };
+
   const C = {
     web: ['Website (JS SDK)', String.raw`<div id="game" style="width:100%;max-width:480px;height:760px"></div>
 <script src="__HOST__/sdk/minigames.js"></script>
@@ -296,7 +642,10 @@ curl __HOST__/api/v1/games -H "Authorization: Bearer YOUR_API_KEY"`],
   // "/game-session" is the endpoint YOU created above (it holds the secret API key)
   const game = MiniGames.mount('#game', {
     sessionEndpoint: '/game-session',
-    onEvent: (e) => console.log(e.type, e.data),   // login, ready, round, exit
+    onEvent: (e) => {
+      console.log(e.type, e.data);                  // login, ready, round, needCoins, exit
+      if (e.type === 'needCoins') openMyShop();     // managed wallet: let the player buy coins
+    },
   });
   // game.reload()  creates a fresh session and reloads
   // game.destroy() removes the game
@@ -306,10 +655,13 @@ curl __HOST__/api/v1/games -H "Authorization: Bearer YOUR_API_KEY"`],
         style="border:0" allow="autoplay; fullscreen"></iframe>`],
     react: ['React', String.raw`import { useEffect, useRef } from 'react';
 
-export function Game() {
+export function Game({ onNeedCoins }) {
   const box = useRef(null);
   useEffect(() => {
-    const g = window.MiniGames.mount(box.current, { sessionEndpoint: '/game-session' });
+    const g = window.MiniGames.mount(box.current, {
+      sessionEndpoint: '/game-session',
+      onEvent: (e) => { if (e.type === 'needCoins') onNeedCoins?.(); },
+    });
     return () => g.destroy();
   }, []);
   return <div ref={box} style={{ width: '100%', maxWidth: 480, height: 760 }} />;
@@ -327,7 +679,8 @@ import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key});
+  const GameScreen({super.key, required this.userToken});
+  final String userToken;                 // the login token of YOUR app
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
@@ -342,8 +695,9 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Future<void> _open() async {
-    // Call YOUR backend (it holds the API key). Never put the key inside the app.
-    final res = await http.post(Uri.parse('https://your-backend.com/game-session'));
+    // Call YOUR backend: it knows who is logged in and holds the API key. Never put the key inside the app.
+    final res = await http.post(Uri.parse('https://your-backend.com/game-session'),
+        headers: {'Authorization': 'Bearer ' + widget.userToken});
     final playUrl = jsonDecode(res.body)['playUrl'] as String;
     final c = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -351,6 +705,7 @@ class _GameScreenState extends State<GameScreen> {
         final e = jsonDecode(m.message);            // { source, type, data }
         debugPrint('game event: ' + e['type'].toString());
         if (e['type'] == 'exit') Navigator.of(context).maybePop();
+        if (e['type'] == 'needCoins') { /* open your coin shop */ }
       })
       ..loadRequest(Uri.parse(playUrl));
     setState(() => controller = c);
@@ -366,6 +721,7 @@ class _GameScreenState extends State<GameScreen> {
   );
 }`],
   };
+
   function tabs(tabsId, boxId, data) {
     const tabs = document.getElementById(tabsId), box = document.getElementById(boxId);
     const show = k => {
@@ -379,6 +735,8 @@ class _GameScreenState extends State<GameScreen> {
     show(Object.keys(data)[0]);
   }
   tabs('srvtabs', 'srv', S);
+  tabs('waltabs', 'wal', W);
+  tabs('hooktabs', 'hook', H);
   tabs('clitabs', 'cli', C);
 </script>
 </body>

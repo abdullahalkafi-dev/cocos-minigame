@@ -15,8 +15,8 @@ export default function IntegrateTab({ data }: { data: any }) {
       <Card>
         <h2 style={{ marginBottom: 16 }}>How it works</h2>
         <div className="stack">
-          <div className="step"><div className="n">1</div><div><b>Your server creates a session</b><p className="muted">It calls our API with your account <b>API key</b> and this game&apos;s <b>ID</b>, and receives a play link that expires in 15 minutes.</p></div></div>
-          <div className="step"><div className="n">2</div><div><b>Your site or app shows the game</b><p className="muted">Load the link in an iframe (website) or a WebView (Flutter, Android, iOS). The player picks a username and plays.</p></div></div>
+          <div className="step"><div className="n">1</div><div><b>Your server creates a session</b><p className="muted">It calls our API with your account <b>API key</b>, this game&apos;s <b>ID</b> and your own <b>player id</b>, and receives a play link that expires in 15 minutes.</p></div></div>
+          <div className="step"><div className="n">2</div><div><b>Your site or app shows the game</b><p className="muted">Load the link in an iframe (website) or a WebView (Flutter, Android, iOS). The player is the person <i>your</i> login identified, so there is no sign-in screen.</p></div></div>
           <div className="step"><div className="n">3</div><div><b>You watch the results</b><p className="muted">Players, bets and payouts appear live under <i>Players &amp; results</i>. The API key never reaches a player.</p></div></div>
         </div>
         <div className="row wrap" style={{ marginTop: 18 }}>
@@ -25,7 +25,7 @@ export default function IntegrateTab({ data }: { data: any }) {
           <Link href="/api-key"><Button variant="ghost" icon="key">{user?.hasApiKey ? 'Manage API key' : 'Create your API key'}</Button></Link>
         </div>
       </Card>
-      <Snippets baseUrl={location.origin} gameId={license.gameId} />
+      <Snippets baseUrl={location.origin} gameId={license.gameId} walletMode={license.walletMode} />
     </div>
   );
 }

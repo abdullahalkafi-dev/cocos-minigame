@@ -10,7 +10,7 @@ const NAV = [
   { href: '/', label: 'Overview', icon: 'home', match: (p: string) => p === '/' },
   { href: '/games', label: 'My games', icon: 'grid', match: (p: string) => p === '/games' || p === '/game' },
   { href: '/store', label: 'Store', icon: 'store', match: (p: string) => p === '/store' },
-  { href: '/api-key', label: 'API key', icon: 'key', match: (p: string) => p === '/api-key' },
+  { href: '/api-key', label: 'API key & webhooks', icon: 'key', match: (p: string) => p === '/api-key' },
 ];
 
 /** Signed-in layout: sidebar, mobile bar and the page. Redirects to the login page when nobody is signed in. */

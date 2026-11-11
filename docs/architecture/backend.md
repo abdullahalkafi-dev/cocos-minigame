@@ -24,8 +24,10 @@ server/src/
     uploads/           media upload validation and storage
     players/           end players of a game
     ledger/            every balance change (the only place money moves)
+    wallet/            the client's wallet API: credit, debit, balance, transactions (idempotent)
+    webhooks/          signed notifications to the client's server: outbox, delivery, retries, worker
     results/           per-round results for the dashboard, statistics, CSV
-    sessions/          server-to-server API: list games, create play sessions
+    sessions/          server-to-server API: list games, create play sessions for a client-named player
     play/              what every game needs: bootstrap, player login, auth of the running game
     lucky-wheel/       the wheel game: rules engine, rounds, bets, settlement, worker
     system/            health check and static files (games, sdk, docs, dashboard, uploads)

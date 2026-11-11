@@ -15,16 +15,20 @@ if (!KEY || !GAME_ID) { console.error('Set MINIGAME_API_KEY (your account API ke
 const page = fs.readFileSync(path.join(import.meta.dirname, 'index.html'), 'utf8').replaceAll('__HOST__', HOST);
 
 http.createServer(async (req, res) => {
-  if (req.method === 'GET' && req.url === '/') {
+  const pathname = new URL(req.url, 'http://localhost').pathname;
+  if (req.method === 'GET' && pathname === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(page);
   }
-  if (req.method === 'POST' && req.url === '/game-session') {
-    // In a real site, pass your logged-in user's name here to skip the username screen:
-    //   body: JSON.stringify({ username: currentUser.name })
+  if (req.method === 'POST' && pathname === '/game-session') {
+    // A real site would read the logged-in user from ITS OWN session (cookie, JWT...). This demo trusts a "user" field
+    // so you can try different players. Whoever you name here is the player: we never ask the player for a name or password.
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const user = String((body && JSON.parse(body).user) || 'guest_' + Math.random().toString(36).slice(2, 8));
     const r = await fetch(`${HOST}/api/v1/sessions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gameId: GAME_ID }),   // add username: currentUser.name to skip the username screen
+      body: JSON.stringify({ gameId: GAME_ID, playerId: user, displayName: user }),
     });
     res.writeHead(r.status, { 'Content-Type': 'application/json' });
     return res.end(await r.text());

@@ -1,18 +1,18 @@
 # Roadmap
 
-Planned work, in order, with the reasoning. Nothing here is built yet unless it says so.
+Planned work, in order, with the reasoning. Items marked **done** are built and live.
 
-## 1. Identity and wallet connection to the client's system
+## 1. Identity and wallet connection to the client's system (done, except the seamless wallet)
 
-**Problem.** Today players pick their own username and their coins exist only in our database. A real client sells coins in its own system and owns its users.
+**Problem (solved for the managed wallet).** Players used to pick their own username and their coins existed only in our database. A real client sells coins in its own system and owns its users.
 
 **Principle.** We are a reusable component, not a custom build per client: one small, stable, well-documented contract that every client adapts **their** system to. End-user login, passwords and security stay on the client side; we only manage the play session.
 
-- **Identity.** The client's server creates the session with its own immutable `playerId` (and optional `displayName`, `avatarUrl`). Because the server is authenticated by the API key, we trust the id. The free username screen stays only as an explicit guest mode (a per-game switch, off by default) and for the dashboard preview.
-- **Managed wallet (default).** We hold the balance. The client's server calls `credit` after selling coins and `debit` for a cash-out, with a `reference` as idempotency key, and can read the balance and the transaction list. Foundation already built: the ledger (see [data model](architecture/data-model.md)).
-- **Signed webhooks.** `round.settled` and friends, HMAC-signed with a timestamp, retried with backoff, with a delivery log and a "send test event" button in the dashboard.
+- **Identity (done).** The client's server creates the session with its own immutable `playerId` (and optional `displayName`, `avatarUrl`). Because the server is authenticated by the API key, we trust the id. The free username screen stays only as an explicit guest mode (a per-game switch, off by default) and for the dashboard preview.
+- **Managed wallet (done).** We hold the balance. The client's server calls `credit` after selling coins and `debit` for a cash-out, with a `reference` as idempotency key, and can read the balance and the transaction list. Foundation already built: the ledger (see [data model](architecture/data-model.md)).
+- **Signed webhooks (done).** `round.settled` and `webhook.test`, HMAC-signed with a timestamp, retried with backoff (7 attempts over about 9 hours), with a delivery log, retry and a "send test event" button in the dashboard. More event types can be added without changing the contract.
 - **Seamless wallet (later).** For clients that must keep the money in their own database: we call four endpoints they implement (`balance`, `debit`, `credit`, `rollback`), signed, with retry and rollback.
-- **Developer experience.** Versioned API, OpenAPI spec, standard error codes (already: `{ error, code }`), sandbox keys, and examples in Node.js, Python, Java, PHP and Flutter.
+- **Developer experience.** Done: standard error codes (`{ error, code }`), an integration checklist and tested examples (Node.js, Java; Python and PHP are written but not run here). Still to do: a versioned API path and an OpenAPI spec, sandbox keys, a coin conversion rate, a Postman collection.
 
 ## 2. Rooms and scale
 

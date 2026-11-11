@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ago, fmt } from '@/lib/api';
 import { useApp } from '@/features/auth/auth-context';
 import { Button, Card, Empty, Icon, Skeleton, Switch } from '@/components/ui';
+import PlayerLedgerModal from './PlayerLedgerModal';
 
 export default function PlayersTab({ data }: { data: any }) {
   const id = data.license.id;
@@ -13,7 +14,8 @@ export default function PlayersTab({ data }: { data: any }) {
   const [filter, setFilter] = useState('');
   const [sort, setSort] = useState<{ k: string; dir: 1 | -1 }>({ k: 'last_seen', dir: -1 });
   const [live, setLive] = useState(true);
-  const [who, setWho] = useState('');
+  const [who, setWho] = useState('');                       // player id the results feed is filtered by
+  const [coins, setCoins] = useState<any>(null);              // player whose coin history is open
 
   const load = useCallback(async () => {
     try {
@@ -29,7 +31,7 @@ export default function PlayersTab({ data }: { data: any }) {
 
   const shown = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    return players.filter(p => !f || p.username.toLowerCase().includes(f)).sort((a, b) => (a[sort.k] > b[sort.k] ? 1 : a[sort.k] < b[sort.k] ? -1 : 0) * sort.dir);
+    return players.filter(p => !f || p.username.toLowerCase().includes(f) || String(p.playerId).toLowerCase().includes(f)).sort((a, b) => (a[sort.k] > b[sort.k] ? 1 : a[sort.k] < b[sort.k] ? -1 : 0) * sort.dir);
   }, [players, filter, sort]);
   const th = (k: string, label: string) => <th className="sortable" onClick={() => setSort(s => ({ k, dir: s.k === k ? (-s.dir as 1 | -1) : -1 }))}>{label}{sort.k === k ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}</th>;
   const exp = (kind: string) => api.download(`/api/licenses/${id}/export.csv?kind=${kind}`, `${kind}.csv`).catch(e => toast(e.message, 'err'));
@@ -56,14 +58,14 @@ export default function PlayersTab({ data }: { data: any }) {
       </div>
       <Card>
         <div className="row between wrap" style={{ marginBottom: 8 }}><h2>Players</h2>
-          <div className="row"><input className="search" placeholder="Search username…" value={filter} onChange={e => setFilter(e.target.value)} /><Button size="sm" icon="upload" onClick={() => exp('players')}>CSV</Button></div></div>
-        {shown.length === 0 ? <Empty icon="users" title="No players yet" text="Players appear here the moment they pick a username in your game." /> : (
+          <div className="row"><input className="search" placeholder="Search name or id…" value={filter} onChange={e => setFilter(e.target.value)} /><Button size="sm" icon="upload" onClick={() => exp('players')}>CSV</Button></div></div>
+        {shown.length === 0 ? <Empty icon="users" title="No players yet" text="Players appear here as soon as your server creates a session for them." /> : (
           <div className="table-wrap"><table>
-            <thead><tr>{th('username', 'Username')}{th('balance', 'Balance')}{th('rounds', 'Rounds')}{th('totalBet', 'Wagered')}{th('totalWin', 'Won')}{th('last_seen', 'Last seen')}<th /></tr></thead>
+            <thead><tr>{th('username', 'Player')}{th('balance', 'Balance')}{th('rounds', 'Rounds')}{th('totalBet', 'Wagered')}{th('totalWin', 'Won')}{th('last_seen', 'Last seen')}<th /></tr></thead>
             <tbody>{shown.map(p => (
-              <tr key={p.id}><td><div className="row"><div className="avatar" style={{ width: 28, height: 28, fontSize: 12 }}>{p.username[0].toUpperCase()}</div><b>{p.username}</b></div></td>
+              <tr key={p.id}><td><div className="row"><div className="avatar" style={{ width: 28, height: 28, fontSize: 12 }}>{p.username[0].toUpperCase()}</div><div><b>{p.username}</b>{p.playerId !== p.username && <div className="muted small mono">{p.playerId}</div>}</div></div></td>
                 <td>{fmt(p.balance)}</td><td>{fmt(p.rounds)}</td><td>{fmt(p.totalBet)}</td><td className={p.totalWin >= p.totalBet && p.rounds ? 'pos' : ''}>{fmt(p.totalWin)}</td><td className="muted">{ago(p.last_seen)}</td>
-                <td><Button size="sm" variant="ghost" onClick={() => setWho(who === p.username ? '' : p.username)}>{who === p.username ? 'Clear' : 'History'}</Button></td></tr>))}</tbody>
+                <td><div className="row"><Button size="sm" variant="ghost" onClick={() => setCoins(p)}>Coins</Button><Button size="sm" variant="ghost" onClick={() => setWho(who === p.playerId ? '' : p.playerId)}>{who === p.playerId ? 'Clear' : 'History'}</Button></div></td></tr>))}</tbody>
           </table></div>)}
       </Card>
       <Card>
@@ -75,6 +77,7 @@ export default function PlayersTab({ data }: { data: any }) {
             <tbody>{rounds.map(r => <tr key={r.id}><td className="muted">{ago(r.created_at)}</td><td><b>{r.username}</b></td><td style={{ whiteSpace: 'normal' }}>{r.outcome.summary}</td><td>{fmt(r.bet)}</td><td className={r.win > 0 ? 'pos' : 'muted'}>{r.win > 0 ? `+${fmt(r.win)}` : '0'}</td></tr>)}</tbody>
           </table></div>)}
       </Card>
+      {coins && <PlayerLedgerModal gameId={id} player={coins} onClose={() => setCoins(null)} />}
     </div>
   );
 }

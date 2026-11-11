@@ -25,7 +25,7 @@ const out = [];
 for (const look of looks) {
   const b = await call('POST', '/api/store/lucky-wheel/buy', T);
   if (Object.keys(look).length > 2) await call('PUT', `/api/licenses/${b.license.id}/config`, T, { config: look });
-  const sess = await call('POST', '/api/v1/sessions', apiKey, { gameId: b.license.id });
+  const sess = await call('POST', '/api/v1/sessions', apiKey, { gameId: b.license.id, playerId: 'demo_viewer' });
   out.push({ name: look.title, gameId: b.license.id, playUrl: sess.playUrl });
 }
 // players with real bets on the first copy

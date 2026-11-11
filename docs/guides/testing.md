@@ -10,6 +10,8 @@ npm run typecheck -w server
 ```
 
 - `modules/lucky-wheel/wheel.engine.test.ts`: pure rules. A 300,000-round simulation checks every option pays back about 85 to 100% of what is bet, and settlement math is checked exactly. No database needed.
+- `modules/webhooks/webhook.url.test.ts`: private-address detection, the https-only rule, and a known-answer signature.
+- `test/wallet.test.ts`: identity (the client names the player, guest login is closed by default), the managed wallet (credit, debit, idempotent references, 10 simultaneous identical credits count once, errors, history paging), isolation between accounts, and webhooks end to end against a local receiver (signature, headers, `round.settled` payload, failure then retry, rotation).
 - `test/api.test.ts`: integration tests through the real HTTP API against a **throw-away in-memory MongoDB replica set** (started by `test/harness.ts`, so transactions work exactly as in production; the first run downloads the MongoDB binary). They cover:
   - bet → settle → history, my bets, ranking, dashboard, **and the ledger adding up to the balance**
   - **money safety**: 8 parallel bets of 40% of the balance (exactly 2 fit), 5 simultaneous settlements (paid once)
@@ -29,6 +31,7 @@ node scripts/e2e-full.mjs      <host>                                        # s
 node scripts/e2e-wheel.mjs     <host> <apiKey> <gameId>                      # plays every phase, screenshots in tmp/
 node scripts/e2e-popups.mjs    <host> <apiKey> <gameId>                      # every popup
 node scripts/e2e-chips.mjs     <host> <apiKey> <gameId> [loads]              # regression: tapping a chip highlights and bets with THAT chip
+node scripts/e2e-wallet.mjs    <host>                                        # managed wallet in a real browser: credit, bet to zero, needCoins event, live top-up
 node scripts/e2e-media.mjs     <host> <email> <password> <gameId> <apiKey>   # video / SVG / sprite sheet / audio end to end
 node scripts/e2e-dashboard.mjs <host> <email> <password> <gameId>            # screenshots of every dashboard screen
 ```

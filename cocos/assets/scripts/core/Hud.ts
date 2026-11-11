@@ -4,6 +4,7 @@ import { showModal } from './Widgets';
 import { Sfx } from './Sfx';
 import { Api, ApiError } from './Api';
 import { showFatal } from './Login';
+import { emit } from './Host';
 
 export interface Theme { primary: string; secondary: string; background: string; text: string; popup: string; accent: string }
 
@@ -44,6 +45,12 @@ export class Hud {
 
   promptRefill() {
     const cur = String(this.cfg.currencyName || 'coins');
+    if (this.cfg.walletMode === 'managed') {
+      // coins come from the app around the game: tell it, so it can open its own shop, and explain to the player
+      emit('needCoins', { balance: this.shown });
+      this.notice(`Out of ${cur.toLowerCase()}`, `You don't have enough ${cur.toLowerCase()} for this. Add more in the app and come back to keep playing.`);
+      return;
+    }
     const start = Number(this.cfg.startingBalance) || 0;
     showModal(this.modalLayer, {
       title: `Out of ${cur.toLowerCase()}`, body: `You don't have enough ${cur.toLowerCase()} for this. Get a free refill of ${fmtNum(start)} and keep playing.`, h: 470,

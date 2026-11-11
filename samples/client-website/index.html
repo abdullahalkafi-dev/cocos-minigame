@@ -20,7 +20,7 @@
   <main>
     <div class="box">
       <h2>Play &amp; win rewards</h2>
-      <p>The game on the right is embedded with two lines of JavaScript. The API key stays on this site's server; visitors only get a temporary link.</p>
+      <p>The game on the right is embedded with two lines of JavaScript. The API key stays on this site's server; visitors only get a temporary link. This site says who the player is (try <code>/?user=maria</code>), so the game never shows a sign-in screen.</p>
       <h3>Events from the game</h3>
       <pre id="log">waiting…</pre>
     </div>
@@ -31,6 +31,8 @@
     var log = document.getElementById('log');
     MiniGames.mount('#game', {
       sessionEndpoint: '/game-session',
+      // stands in for "the user who is logged in to this site": try /?user=maria
+      sessionBody: { user: new URLSearchParams(location.search).get('user') || '' },
       onEvent: function (e) { log.textContent = new Date().toLocaleTimeString() + '  ' + e.type + '  ' + JSON.stringify(e.data) + '\n' + log.textContent; },
     });
   </script>

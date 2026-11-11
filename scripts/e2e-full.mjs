@@ -55,10 +55,7 @@ await Promise.all(names.map(async (name, i) => {
   const pg = await ctx.newPage();
   await pg.setViewportSize({ width: 1100, height: 860 });
   pg.on('pageerror', e => errors.push(e.message));
-  await pg.goto(`http://localhost:${4101 + i}/`);
-  const frame = pg.frameLocator('#game iframe');
-  await frame.locator('#mg-login input').fill(name);
-  await frame.locator('#mg-login button').click();
+  await pg.goto(`http://localhost:${4101 + i}/?user=${name}`);   // the site (not the player) says who is playing
   await pg.waitForTimeout(9000);
   const box = await pg.locator('#game iframe').boundingBox();
   const vw = 1280 * box.width / box.height, s = Math.min(1, (vw - 8) / 720), H = 1280 / s;

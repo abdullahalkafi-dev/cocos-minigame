@@ -56,7 +56,7 @@ Open http://localhost:3000, create an account (10,000 demo credits), buy a game,
 ## Tests
 
 ```bash
-npm test                 # 8 server tests against an in-memory MongoDB replica set
+npm test                 # 16 server tests against an in-memory MongoDB replica set
 ```
 
 Headless-browser end-to-end scripts (`scripts/e2e-*.mjs`) are described in [`docs/guides/testing.md`](docs/guides/testing.md).
@@ -71,6 +71,6 @@ Headless-browser end-to-end scripts (`scripts/e2e-*.mjs`) are described in [`doc
 
 ## Known limits (by design, for now)
 
-- Wallet currency is demo credits; there is no payment provider. Connecting a client's own coin economy is the first item on the [roadmap](docs/roadmap.md).
+- There is no payment provider: a client sells coins in its own system and tells us with the wallet API (or uses the demo wallet). The seamless-wallet mode (we call the client) and rooms are on the [roadmap](docs/roadmap.md).
 - Wheel art must have the same number of wedges as the wheel layout in the rules.
 - Players poll the round state once a second: fine for hundreds of concurrent players; thousands need push updates (roadmap).

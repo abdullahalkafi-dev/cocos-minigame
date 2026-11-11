@@ -6,6 +6,7 @@ import { gamePath } from '@/lib/paths';
 import { useOrigin } from '@/lib/use-origin';
 import { useApp } from '@/features/auth/auth-context';
 import { Badge, Button, Card, Icon, Modal, PageHead } from '@/components/ui';
+import WebhookCard from './WebhookCard';
 
 export default function ApiKeyPage() {
   const { user, refresh, toast } = useApp();
@@ -29,7 +30,7 @@ export default function ApiKeyPage() {
 
   return (
     <div className="stack" style={{ maxWidth: 860 }}>
-      <PageHead title="API key" sub="One secret key for your whole account. It works for every game you own: you only add the game ID." />
+      <PageHead title="API key & webhooks" sub="One secret key for your whole account. It works for every game you own: you only add the game ID." />
 
       {fresh && (
         <Card className="stack-sm" style={{ borderColor: 'var(--brand)' }}>
@@ -70,7 +71,7 @@ export default function ApiKeyPage() {
         <div className="codebox"><pre>{`curl -X POST ${origin}/api/v1/sessions \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"gameId":"${games[0]?.gameId ?? 'YOUR_GAME_ID'}"}'`}</pre></div>
+  -d '{"gameId":"${games[0]?.gameId ?? 'YOUR_GAME_ID'}","playerId":"user-8841"}'`}</pre></div>
         <div className="row" style={{ marginTop: 12 }}><a href="/docs/" target="_blank" rel="noreferrer"><Button icon="book">Open the integration guide</Button></a><span className="muted small">Node.js, Python, Java, PHP, Flutter and website examples.</span></div>
       </Card>
 
@@ -80,6 +81,7 @@ export default function ApiKeyPage() {
           <div className="row end"><Button variant="ghost" onClick={() => setConfirm(false)}>Cancel</Button><Button variant="danger" loading={busy} onClick={make}>Rotate key</Button></div>
         </Modal>
       )}
+      <WebhookCard />
     </div>
   );
 }

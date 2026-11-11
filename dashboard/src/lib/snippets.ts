@@ -1,6 +1,7 @@
 // Code samples shown in the dashboard (pre-filled with the game's ID). The public docs page carries the same samples.
 export interface Snip { label: string; lang: string; code: string }
 
+/** Step 1: your server asks for a play session and says WHO the player is. */
 export function serverSnippets(host: string, gameId: string): Record<string, Snip> {
   return {
     node: { label: 'Node.js', lang: 'js', code: `// Node 18+ (Express). Runs on YOUR server; the API key stays in an environment variable.
@@ -8,15 +9,20 @@ import express from 'express';
 const app = express();
 
 app.post('/game-session', async (req, res) => {
+  // YOUR login system decides who this is. We trust the id because only your server can send it.
+  const user = req.user;                       // e.g. from your session cookie or JWT
+  if (!user) return res.status(401).end();
+
   const r = await fetch('${host}/api/v1/sessions', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + process.env.MINIGAME_API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       gameId: '${gameId}',
-      username: req.user?.username,          // optional: skips the username screen
+      playerId: String(user.id),               // your own id for this person (1-64 chars: letters, digits, _ . : @ -)
+      displayName: user.name,                  // optional: shown in rankings and winner lists
     }),
   });
-  res.status(r.status).json(await r.json());  // { playUrl, sessionToken, expiresIn, gameId, game }
+  res.status(r.status).json(await r.json());   // { playUrl, sessionToken, expiresIn, gameId, game, playerId }
 });
 
 app.listen(3000);` },
@@ -29,15 +35,19 @@ API = "${host}"
 
 @app.post("/game-session")
 def game_session():
-    payload = {"gameId": "${gameId}"}          # add "username": current_user.name to skip the username screen
+    user = current_user()                       # YOUR login system decides who this is
     r = requests.post(
         API + "/api/v1/sessions",
         headers={"Authorization": "Bearer " + os.environ["MINIGAME_API_KEY"]},
-        json=payload,
+        json={
+            "gameId": "${gameId}",
+            "playerId": str(user.id),           # your own id for this person
+            "displayName": user.name,           # optional
+        },
         timeout=10,
     )
-    return jsonify(r.json()), r.status_code   # {"playUrl": ..., "expiresIn": 900, ...}` },
-    java: { label: 'Java', lang: 'java', code: `// Java 11+, no extra libraries.
+    return jsonify(r.json()), r.status_code    # {"playUrl": ..., "expiresIn": 900, ...}` },
+    java: { label: 'Java', lang: 'java', code: `// Java 17+, no extra libraries.
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -48,12 +58,13 @@ public class MiniGameClient {
     private static final String API = "${host}";
     private static final String GAME_ID = "${gameId}";
 
+    private static String json(String s) { return "\\"" + s.replace("\\\\", "\\\\\\\\").replace("\\"", "\\\\\\"") + "\\""; }
+
     /** Returns the JSON answer ({"playUrl": "...", ...}). Hand it to your front-end unchanged. */
-    public static String createSession(String username) throws Exception {
-        // username is optional (3-20 chars: letters, digits, _ . -). Anything else is ignored.
-        boolean ok = username != null && username.matches("[A-Za-z0-9_.-]{3,20}");
-        String body = ok ? "{\\"gameId\\":\\"" + GAME_ID + "\\",\\"username\\":\\"" + username + "\\"}"
-                         : "{\\"gameId\\":\\"" + GAME_ID + "\\"}";
+    public static String createSession(String playerId, String displayName) throws Exception {
+        // playerId: YOUR id for this person (1-64 chars: letters, digits, _ . : @ -)
+        String body = "{\\"gameId\\":" + json(GAME_ID) + ",\\"playerId\\":" + json(playerId)
+                    + ",\\"displayName\\":" + json(displayName) + "}";
         HttpRequest req = HttpRequest.newBuilder(URI.create(API + "/api/v1/sessions"))
             .header("Authorization", "Bearer " + System.getenv("MINIGAME_API_KEY"))
             .header("Content-Type", "application/json")
@@ -68,24 +79,138 @@ public class MiniGameClient {
 // class GameController {
 //     @PostMapping(value = "/game-session", produces = "application/json")
 //     String session(java.security.Principal user) throws Exception {
-//         return MiniGameClient.createSession(user == null ? null : user.getName());
+//         return MiniGameClient.createSession(user.getName(), user.getName());
 //     }
 // }` },
     php: { label: 'PHP', lang: 'php', code: `<?php
 // Runs on YOUR server. Keep the key in an environment variable.
+$user = current_user();   // YOUR login system decides who this is
 $ch = curl_init('${host}/api/v1/sessions');
 curl_setopt_array($ch, [
   CURLOPT_POST => true,
   CURLOPT_RETURNTRANSFER => true,
   CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . getenv('MINIGAME_API_KEY'), 'Content-Type: application/json'],
-  CURLOPT_POSTFIELDS => json_encode(['gameId' => '${gameId}', 'username' => $currentUser ?? null]),
+  CURLOPT_POSTFIELDS => json_encode(['gameId' => '${gameId}', 'playerId' => (string)$user->id, 'displayName' => $user->name]),
 ]);
 header('Content-Type: application/json');
-echo curl_exec($ch); // { playUrl, sessionToken, expiresIn, gameId, game }` },
+echo curl_exec($ch); // { playUrl, sessionToken, expiresIn, gameId, game, playerId }` },
     curl: { label: 'cURL', lang: 'sh', code: `curl -X POST ${host}/api/v1/sessions \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"gameId":"${gameId}","username":"optional_player_name"}'` },
+  -d '{"gameId":"${gameId}","playerId":"user-8841","displayName":"Maria"}'` },
+  };
+}
+
+/** Step 3 (managed wallet): your server adds coins after a sale and removes them for a cash-out. */
+export function walletSnippets(host: string, gameId: string): Record<string, Snip> {
+  const base = `${host}/api/v1/games/${gameId}/players/user-8841`;
+  return {
+    curl: { label: 'cURL', lang: 'sh', code: `# Add coins after the player bought them in YOUR system. "reference" makes a retry safe:
+# the same reference always gives the same answer and never moves coins twice.
+curl -X POST ${base}/credit \\
+  -H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"amount":100000,"reference":"order-1001","note":"bought 100k coins"}'
+# -> {"playerId":"user-8841","balance":100000,"transactionId":"...","duplicate":false}
+
+# Remove coins (cash-out). 402 insufficient_balance when the player has less.
+curl -X POST ${base}/debit \\
+  -H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"amount":40000,"reference":"cashout-77"}'
+
+# Balance and history
+curl ${base} -H "Authorization: Bearer YOUR_API_KEY"
+curl "${base}/transactions?limit=20" -H "Authorization: Bearer YOUR_API_KEY"` },
+    node: { label: 'Node.js', lang: 'js', code: `// Call this from your own order flow, after the payment succeeded.
+async function creditCoins(userId, amount, orderId) {
+  const r = await fetch('${host}/api/v1/games/${gameId}/players/' + encodeURIComponent(userId) + '/credit', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + process.env.MINIGAME_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount, reference: 'order-' + orderId }),   // same reference = safe to retry
+  });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.code + ': ' + body.error);          // e.g. wallet_not_enabled, invalid_amount
+  return body.balance;
+}` },
+    python: { label: 'Python', lang: 'py', code: `import os, requests
+
+def credit_coins(user_id, amount, order_id):
+    r = requests.post(
+        "${host}/api/v1/games/${gameId}/players/" + str(user_id) + "/credit",
+        headers={"Authorization": "Bearer " + os.environ["MINIGAME_API_KEY"]},
+        json={"amount": amount, "reference": f"order-{order_id}"},   # same reference = safe to retry
+        timeout=10,
+    )
+    body = r.json()
+    if not r.ok:
+        raise RuntimeError(body["code"] + ": " + body["error"])
+    return body["balance"]` },
+  };
+}
+
+/** Step 4: verify the signature of notifications sent to your server. */
+export function webhookSnippets(): Record<string, Snip> {
+  return {
+    node: { label: 'Node.js', lang: 'js', code: `import crypto from 'node:crypto';
+import express from 'express';
+const app = express();
+
+// IMPORTANT: verify the RAW body, so do not parse it as JSON before checking the signature.
+app.post('/minigame-webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const ts = req.header('X-Minigame-Timestamp');
+  const expected = 'v1=' + crypto.createHmac('sha256', process.env.MINIGAME_WEBHOOK_SECRET)
+    .update(ts + '.' + req.body.toString('utf8')).digest('hex');
+  const given = req.header('X-Minigame-Signature') || '';
+  const ok = given.length === expected.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+  if (!ok || Math.abs(Date.now() / 1000 - Number(ts)) > 300) return res.status(400).end();   // bad signature or too old
+
+  const event = JSON.parse(req.body.toString('utf8'));   // { id, type, createdAt, gameId, data }
+  // event.id is unique: store it and skip repeats (a delivery can arrive more than once)
+  if (event.type === 'round.settled') console.log('round', event.data.round, event.data.players);
+  res.status(200).end();                                  // any 2xx means "received"
+});` },
+    python: { label: 'Python', lang: 'py', code: `import hashlib, hmac, os, time
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.post("/minigame-webhook")
+def minigame_webhook():
+    raw = request.get_data()                       # the RAW body, exactly as received
+    ts = request.headers.get("X-Minigame-Timestamp", "")
+    expected = "v1=" + hmac.new(os.environ["MINIGAME_WEBHOOK_SECRET"].encode(),
+                                ts.encode() + b"." + raw, hashlib.sha256).hexdigest()
+    given = request.headers.get("X-Minigame-Signature", "")
+    if not hmac.compare_digest(given, expected) or abs(time.time() - int(ts or 0)) > 300:
+        return "", 400
+    event = request.get_json()                     # { id, type, createdAt, gameId, data }
+    # event["id"] is unique: store it and skip repeats
+    return "", 200` },
+    java: { label: 'Java', lang: 'java', code: `// Java 17+. Works in any framework: you only need the RAW body, the two headers and your secret.
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+
+public class MiniGameWebhook {
+    public static boolean verify(String secret, String timestamp, String rawBody, String signatureHeader) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        String expected = "v1=" + HexFormat.of().formatHex(mac.doFinal((timestamp + "." + rawBody).getBytes(StandardCharsets.UTF_8)));
+        boolean fresh = Math.abs(System.currentTimeMillis() / 1000 - Long.parseLong(timestamp)) <= 300;
+        return fresh && MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), signatureHeader.getBytes(StandardCharsets.UTF_8));
+    }
+}` },
+    php: { label: 'PHP', lang: 'php', code: `<?php
+$raw = file_get_contents('php://input');                         // the RAW body
+$ts = $_SERVER['HTTP_X_MINIGAME_TIMESTAMP'] ?? '';
+$given = $_SERVER['HTTP_X_MINIGAME_SIGNATURE'] ?? '';
+$expected = 'v1=' . hash_hmac('sha256', $ts . '.' . $raw, getenv('MINIGAME_WEBHOOK_SECRET'));
+if (!hash_equals($expected, $given) || abs(time() - (int)$ts) > 300) { http_response_code(400); exit; }
+
+$event = json_decode($raw, true);   // id, type, createdAt, gameId, data
+// $event['id'] is unique: store it and skip repeats
+http_response_code(200);` },
   };
 }
 
@@ -108,9 +233,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
 
-Future<WebViewController> openGame() async {
-  // Call YOUR backend (it holds the API key). Never put the key inside the app.
-  final res = await http.post(Uri.parse('https://your-backend.com/game-session'));
+Future<WebViewController> openGame(String userToken) async {
+  // Call YOUR backend (it knows who is logged in and holds the API key). Never put the key inside the app.
+  final res = await http.post(Uri.parse('https://your-backend.com/game-session'),
+      headers: {'Authorization': 'Bearer ' + userToken});
   final playUrl = jsonDecode(res.body)['playUrl'] as String;
 
   return WebViewController()

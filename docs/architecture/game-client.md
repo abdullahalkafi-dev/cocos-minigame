@@ -48,4 +48,4 @@ The engine is trimmed to 2D modules (about 1.9 MB, about 430 KB over the wire wi
 
 ## Host messaging
 
-The game talks to the page or app around it with `postMessage` (websites) and a JavaScript channel named `MiniGames` (Flutter and other WebViews): events `ready`, `login`, `round`, `exit`.
+The game talks to the page or app around it with `postMessage` (websites) and a JavaScript channel named `MiniGames` (Flutter and other WebViews): events `ready`, `login`, `round`, `needCoins` (managed wallet: the player ran out of coins, open your shop) and `exit`.
