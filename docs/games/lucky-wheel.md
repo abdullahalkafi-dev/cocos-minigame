@@ -42,15 +42,15 @@ A buyer who uploads nothing gets the default artwork. A buyer can replace one as
 ## Architecture (for your technical audience)
 
 ```
- Dashboard (React)  ──manifest──▶  Server (Fastify + SQLite)  ──config + asset URLs──▶  Game (Cocos Creator, TypeScript)
+ Dashboard (Next.js)  ──manifest──▶  Server (Express + MongoDB)  ──config + asset URLs──▶  Game (Cocos Creator, TypeScript)
    renders forms from the           validates config, stores media,                      loads each slot at runtime:
    game's manifest                  runs the round clock + payouts                        image / SVG / video / sheet / audio
 ```
 
-- **Manifest-driven**: each game declares what is customizable (`server/src/catalog.ts`). The dashboard form, the server validation and the media upload rules are all generated from it, so a new game needs no dashboard code.
+- **Manifest-driven**: each game declares what is customizable (`server/src/modules/catalog`). The dashboard form, the server validation and the media upload rules are all generated from it, so a new game needs no dashboard code.
 - **Typed asset slots**: a slot declares its kind (`image`, `video`, `audio`, `media`). Uploads are identified by **file signature**, never by name, size-limited per type, and stored per license. SVGs containing scripts or external references are rejected.
 - **Runtime media loader** (`cocos/assets/scripts/core/Media.ts`): one function, `spawnMedia(slot)`, shows any slot as a sprite. SVG is rasterized sharply at any size, a sprite sheet steps its frame rectangle at the chosen FPS, and a video is copied into a texture every frame (muted, inline, so it autoplays on phones; WebM keeps transparency).
-- **Shared round clock** (`server/src/wheel.ts`): a round is created lazily with its outcome already drawn (crypto RNG) and hidden from clients until betting closes. Payouts are credited when the spin ends, idempotently, so a refresh or a second tab can never pay twice. Every settled round is also written to the buyer's results table, so the dashboard needs no game-specific code.
+- **Shared round clock** (`server/src/modules/lucky-wheel`): a round is created lazily with its outcome already drawn (crypto RNG) and hidden from clients until betting closes. Payouts are credited when the spin ends, idempotently, so a refresh or a second tab can never pay twice. Every settled round is also written to the buyer's results table, so the dashboard needs no game-specific code.
 - **Server-authoritative**: bets are validated and deducted on the server; clients only render the state. The odds are never sent to the game.
 - **Responsive**: fixed 1280-unit design height, scaled to fit narrow phones; the top bar and bottom controls anchor to the screen edges.
 - **Host messaging**: `postMessage` for websites and a JavaScript channel (`MiniGames`) for Flutter/WebViews: `login`, `ready`, `round`, `exit`.
@@ -60,15 +60,15 @@ A buyer who uploads nothing gets the default artwork. A buyer can replace one as
 
 | Piece | Technology |
 |---|---|
-| Backend | Node.js 24 + Fastify 5, SQLite (built-in `node:sqlite`), TypeScript |
-| Buyer dashboard | React 18 + Vite: asset studio, live phone preview, players and results |
+| Backend | Node.js 24 + Express 5, TypeScript, MongoDB (Mongoose, transactions), Redis cache |
+| Buyer dashboard | Next.js 15 + React 19 (static export): asset studio, live phone preview, players and results |
 | Embed library | `sdk/minigames.js` (about 4 KB, no dependencies) |
 | Security | One secret API key per account (hashed at rest, rotatable) plus a game ID per game, 15-minute signed session tokens, per-game usernames, rate limits, optional allowed-site list (`frame-ancestors`), upload validation, locked-down upload serving (CSP `sandbox`, `nosniff`) |
-| Tests | 5 automated server tests (round flow and exact payout math, 300,000-round odds simulation, API key and game ID isolation and rotation, customization validation, media upload safety) plus headless-browser end-to-end scripts in `scripts/` |
+| Tests | 8 automated server tests (round flow and exact payout math, ledger adds up to the balance, parallel bets and settlement, 300,000-round odds simulation, API key and game ID isolation and rotation, account and store, customization validation, media upload safety) plus headless-browser end-to-end scripts in `scripts/` |
 
 ## Honest limits of this demo
 
 - The in-game currency is demo credits; there is no payment provider.
-- SQLite is perfect for a demo and small deployments; use Postgres for heavy concurrent load.
+- Round state is polled once a second per player. That is fine for hundreds of concurrent players; thousands need push (WebSocket) and a load test first (see the roadmap).
 - Every wheel artwork must have the same number of wedges as the wheel layout in the rules. The default art has 9.
 - Video effects play best as WebM with transparency. MP4 has no transparency, so use it for full-screen or opaque effects.
