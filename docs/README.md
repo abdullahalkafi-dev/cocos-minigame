@@ -7,7 +7,7 @@ Start here. Each folder answers one kind of question.
 | [`architecture/`](architecture) | how the system is built and why: the big picture, backend modules, data model, dashboard, game client |
 | [`guides/`](guides) | how to do something: run it locally, test it, add a game |
 | [`games/`](games) | what a game contains and what a buyer can customize (written so you can present it to a client) |
-| [`operations/`](operations) | how to deploy, update, back up and migrate |
+| [`operations/`](operations) | how to deploy, update, back up and migrate; [audit log](operations/audit-log.md) and [load test results](operations/load-testing.md) |
 | [`ai/`](ai/README.md) | how to use these docs with an AI assistant: playbook, ready-made prompts, rules for AI working in this repo |
 | [`roadmap.md`](roadmap.md) | what is planned next and the reasoning behind it |
 

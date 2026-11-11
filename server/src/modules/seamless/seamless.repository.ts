@@ -6,6 +6,12 @@ export const seamlessRepository = {
   async create(rec: SeamlessOpRec, session?: ClientSession) {
     try { await SeamlessOpModel.create([rec], { session }); } catch (e: any) { if (e?.code !== 11000) throw e; }
   },
+  /** Which of these references already exist (a payout run again must not try to create them twice). */
+  async existingIds(ids: string[], session?: ClientSession) {
+    if (!ids.length) return new Set<string>();
+    const rows = await SeamlessOpModel.find({ _id: { $in: ids } }).select('_id').session(session ?? null).lean<{ _id: string }[]>();
+    return new Set(rows.map(r => r._id));
+  },
   byId: (id: string) => SeamlessOpModel.findById(id).lean<SeamlessOpRec>().exec(),
   recent: (userId: string, limit = 30) => SeamlessOpModel.find({ userId }).sort({ createdAt: -1 }).limit(limit).lean<SeamlessOpRec[]>().exec(),
   dueIds: (now: number, limit = 50) => SeamlessOpModel.find({ status: 'pending', nextAttemptAt: { $lte: now } }).sort({ nextAttemptAt: 1 }).limit(limit).select('_id').lean<{ _id: string }[]>().exec(),

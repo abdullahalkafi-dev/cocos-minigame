@@ -1,4 +1,5 @@
 import { badRequest } from '../../common/errors.js';
+import { PLAYER_ID_RE, ROOM_KEY_RE } from '../../config/constants.js';
 import type { Cache } from '../../infra/cache.js';
 import type { GameRec } from '../games/game.model.js';
 import type { PlayerRepository } from '../players/player.repository.js';
@@ -28,6 +29,8 @@ export function createLeaderboardService(d: { results: ResultRepository; players
       const limit = Math.min(100, Math.max(1, Number(q.limit) || 20));
       const room = typeof q.room === 'string' && q.room ? q.room : undefined;
       const ext = typeof q.playerId === 'string' && q.playerId ? q.playerId : undefined;
+      if (room && !ROOM_KEY_RE.test(room)) throw badRequest('room must be the key of one of your rooms', 'invalid_room');
+      if (ext && !PLAYER_ID_RE.test(ext)) throw badRequest('playerId must be 1-64 characters: letters, numbers and _ . : @ -', 'invalid_player_id');
       const since = periodStart(period);
 
       const key = `lb:${game._id}:${room ?? '*'}:${period}:${metric}:${limit}:${ext ?? ''}`;

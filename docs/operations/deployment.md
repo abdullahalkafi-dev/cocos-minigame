@@ -106,6 +106,7 @@ cd /opt/minigame-studio && git pull && docker compose up -d --build
 ## Backups
 
 - **Database:** use Atlas backups (or `mongodump` with the connection string).
+- **Keep `/data/secret.key` safe** (or set `SESSION_SECRET` in `.env`): without it every logged-in player and buyer is signed out and stored webhook secrets cannot be read.
 - **Files:** `docker run --rm -v minigame-studio_minigames-data:/data -v $PWD:/backup alpine tar czf /backup/minigames-data.tgz -C /data .`
 
 ## Moving data from the old SQLite version

@@ -2,7 +2,7 @@ import type { ClientSession } from 'mongoose';
 import { PlayerModel, type PlayerRec } from './player.model.js';
 
 export const playerRepository = {
-  byId: (id: string) => PlayerModel.findById(id).lean<PlayerRec>().exec(),
+  byId: (id: string, session?: ClientSession) => PlayerModel.findById(id).session(session ?? null).lean<PlayerRec>().exec(),
   byIds: (ids: string[]) => PlayerModel.find({ _id: { $in: ids } }).lean<PlayerRec[]>().exec(),
   byExternal: (gameId: string, externalId: string) => PlayerModel.findOne({ gameId, externalId }).lean<PlayerRec>().exec(),
   async create(rec: PlayerRec, session?: ClientSession) { await PlayerModel.create([rec], { session }); },

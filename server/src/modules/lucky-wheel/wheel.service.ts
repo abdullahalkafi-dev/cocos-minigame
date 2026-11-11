@@ -5,6 +5,7 @@
 // simply continues where it stopped.
 import { AppError, badRequest, conflict, paymentRequired } from '../../common/errors.js';
 import { rid } from '../../common/utils/crypto.js';
+import { MAX_AMOUNT } from '../../config/constants.js';
 import { inTransaction } from '../../infra/mongo.js';
 import type { Cache } from '../../infra/cache.js';
 import type { GameRec } from '../games/game.model.js';
@@ -64,6 +65,7 @@ export function createWheelService(d: {
         betEnd: start + t.betSeconds * 1000, spinEnd: start + (t.betSeconds + t.spinSeconds) * 1000,
         endAt: start + (t.betSeconds + t.spinSeconds + t.resultSeconds) * 1000,
         resultTarget: out.target, segment: out.segment, extra: out.extra, snapshot: makeSnapshot(cfg), settled: false,
+        walletMode: d.games.playerSettings(game).walletMode,
       };
       const created = (await d.repo.insertRound(rec)) ? rec : (await d.repo.lastRound(gameId, roomId))!;   // lost the race: use the winner's round
       await d.cache.setJson(curKey(gameId, roomId), created, Math.max(1, (created.endAt - now) / 1000));
@@ -91,7 +93,7 @@ export function createWheelService(d: {
       if (!leased) return;                                                  // somebody else is paying it, or already did
       const game = await d.games.get(r.gameId);
       if (!game) { await d.repo.finalize(r._id); return; }
-      const mode = d.games.playerSettings(game).walletMode;
+      const mode = r.walletMode ?? d.games.playerSettings(game).walletMode;   // the system the bets were taken from, even if the setting changed since
       const bets = await d.repo.betsOfRound(r._id);
       const hits = [r.resultTarget, ...r.extra];
 
@@ -104,9 +106,12 @@ export function createWheelService(d: {
 
         // payouts in small batches: each batch is one short transaction, and anything already paid is skipped
         for (const batch of chunks([...perPlayer.keys()], PAYOUT_BATCH)) {
+          await d.repo.extendLease(r._id, Date.now() + PAYOUT_LEASE_MS);
           await inTransaction(async s => {
             const winRef = (pid: string) => `win:${r._id}:${pid}`;
-            const paid = mode === 'seamless' ? new Set<string>() : await d.ledger.paidReferences(r.gameId, batch.filter(pid => perPlayer.get(pid)!.win > 0).map(winRef), s);
+            const winners = batch.filter(pid => perPlayer.get(pid)!.win > 0).map(winRef);
+            // a payout that runs again (after a crash) skips what is already stored or paid
+            const paid = mode === 'seamless' ? await d.seamless.storedCredits(winners, s) : await d.ledger.paidReferences(r.gameId, winners, s);
             const resultIds = batch.map(pid => `rnd:${r._id}:${pid}`);
             const haveResult = await d.results.existingIds(resultIds, s);
             const rows: ResultRec[] = [];
@@ -149,13 +154,16 @@ export function createWheelService(d: {
       const round = await service.currentRound(game, room, cfg, now);
       if (phaseOf(round, now) !== 'betting' || now > round.betEnd - 250) throw conflict('Betting is closed for this round', 'betting_closed');
       const maxPer = Number(cfg.limits?.maxPerTarget) || Infinity;
-      const mode = d.games.playerSettings(game).walletMode;
+      const mode = round.walletMode ?? d.games.playerSettings(game).walletMode;
+      // the buyer changed where the coins live while this round was running: its bets must stay in one system, so wait for the next round
+      if (mode !== d.games.playerSettings(game).walletMode) throw conflict('The wallet settings changed. Betting opens again in the next round.', 'wallet_mode_changed');
       let total = 0;
       const add = new Map<string, number>();
       for (const b of bets) {
         if (!round.snapshot.targets.some(t => t.id === b.target)) throw badRequest('Unknown bet option', 'unknown_option');
-        if (!Number.isInteger(b.amount) || b.amount <= 0) throw badRequest('Invalid amount', 'invalid_amount');
+        if (!Number.isSafeInteger(b.amount) || b.amount <= 0 || b.amount > MAX_AMOUNT) throw badRequest('Invalid amount', 'invalid_amount');
         total += b.amount; add.set(b.target, (add.get(b.target) ?? 0) + b.amount);
+        if (total > MAX_AMOUNT) throw badRequest('Invalid amount', 'invalid_amount');
       }
       const checkMax = async (s?: import('mongoose').ClientSession) => {
         for (const [target, amount] of add) {
@@ -188,7 +196,7 @@ export function createWheelService(d: {
           });
         }
       } catch (e) {
-        if (e instanceof AppError && e.code === 'insufficient_balance' && mode !== 'demo') void service.notifyNeedsCoins(game, room, player);
+        if (e instanceof AppError && e.code === 'insufficient_balance' && mode !== 'demo') service.notifyNeedsCoins(game, room, player).catch(err => console.error('needs_coins', err));
         throw e;
       }
       hub?.onBet(game._id, room.key, player._id, add, result.balance);

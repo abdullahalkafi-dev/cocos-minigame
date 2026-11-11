@@ -58,12 +58,17 @@ export const resultRepository = {
     const base = [{ $match: boardMatch(gameId, o) }, ...perPlayer];
     const mine = (await ResultModel.aggregate<LeaderRow>([...base, { $match: { _id: playerId } }]))[0];
     if (!mine) return null;
-    const better = await ResultModel.aggregate<{ n: number }>([...base, { $match: { [field]: { $gt: mine[field] } } }, { $count: 'n' }]);
+    // "better" follows exactly the order of the list (value, then amount wagered, then id), so a rank always matches the list
+    const better = await ResultModel.aggregate<{ n: number }>([...base, { $match: { $or: [
+      { [field]: { $gt: mine[field] } },
+      { [field]: mine[field], wagered: { $gt: mine.wagered } },
+      { [field]: mine[field], wagered: mine.wagered, _id: { $lt: playerId } },
+    ] } }, { $count: 'n' }]);
     return { row: mine, rank: (better[0]?.n ?? 0) + 1 };
   },
   list: (gameId: string, o: { limit: number; offset: number; playerId?: string }) =>
     ResultModel.find({ ...real(gameId), ...(o.playerId ? { playerId: o.playerId } : {}) })
       .sort({ createdAt: -1 }).skip(o.offset).limit(o.limit).lean<ResultRec[]>().exec(),
-  all: (gameId: string) => ResultModel.find(real(gameId)).sort({ createdAt: -1 }).lean<ResultRec[]>().exec(),
+  all: (gameId: string, limit: number) => ResultModel.find(real(gameId)).sort({ createdAt: -1 }).limit(limit).lean<ResultRec[]>().exec(),
 };
 export type ResultRepository = typeof resultRepository;

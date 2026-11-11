@@ -4,7 +4,11 @@ import type { GameRec } from '../games/game.model.js';
 import type { ResultRepository } from './result.repository.js';
 import type { ResultRec } from './result.model.js';
 
+/** An export holds at most this many rows (the newest), so one click can never exhaust the server's memory. */
+export const CSV_MAX_ROWS = 100_000;
 const csvCell = (v: unknown) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+/** Text that starts with = + - @ would be run as a formula by Excel and Google Sheets: a leading apostrophe makes it plain text. */
+const csvText = (v: unknown) => { const s = String(v ?? ''); return /^[=+\-@\t\r]/.test(s) ? "'" + s : s; };
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /** Round results: written when a round settles, read by the dashboard (statistics, players, results, CSV). */
@@ -34,8 +38,8 @@ export function createResultService(d: { repo: ResultRepository; players: Player
       };
     },
 
-    async players(game: GameRec) {
-      const [list, agg] = await Promise.all([d.players.listByGame(game._id), d.repo.perPlayer(game._id)]);
+    async players(game: GameRec, limit = 500) {
+      const [list, agg] = await Promise.all([d.players.listByGame(game._id, limit), d.repo.perPlayer(game._id)]);
       return list.map(p => {
         const a = agg.get(p._id);
         return {
@@ -59,15 +63,15 @@ export function createResultService(d: { repo: ResultRepository; players: Player
 
     async csv(game: GameRec, kind: 'players' | 'rounds') {
       if (kind === 'players') {
-        const rows = await this.players(game);
+        const rows = await this.players(game, CSV_MAX_ROWS);
         return 'player_id,name,balance,rounds,total_bet,total_win,first_seen,last_seen\n' + rows.map(r =>
-          [r.playerId, r.username, r.balance, r.rounds, r.totalBet, r.totalWin, iso(r.created_at), iso(r.last_seen)].map(csvCell).join(',')).join('\n');
+          [csvText(r.playerId), csvText(r.username), r.balance, r.rounds, r.totalBet, r.totalWin, iso(r.created_at), iso(r.last_seen)].map(csvCell).join(',')).join('\n');
       }
-      const rows = await d.repo.all(game._id);
+      const rows = await d.repo.all(game._id, CSV_MAX_ROWS);
       const who = await names(rows.map(r => r.playerId));
       return 'time,player_id,name,bet,win,result\n' + rows.map(r => {
         const p = who.get(r.playerId);
-        return [iso(r.createdAt), p?.externalId, p?.displayName, r.bet, r.win, r.outcome?.summary].map(csvCell).join(',');
+        return [iso(r.createdAt), csvText(p?.externalId), csvText(p?.displayName), r.bet, r.win, csvText(r.outcome?.summary)].map(csvCell).join(',');
       }).join('\n');
     },
   };

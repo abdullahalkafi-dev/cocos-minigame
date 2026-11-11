@@ -9,6 +9,9 @@ import { startWheelWorker } from './modules/lucky-wheel/wheel.worker.js';
 import { WheelBetModel, WheelRoundModel } from './modules/lucky-wheel/wheel.model.js';
 import { ResultModel } from './modules/results/result.model.js';
 
+// a failure in a background task must be logged, never take the whole game down
+process.on('unhandledRejection', e => console.error('unhandled rejection', e));
+
 const env = loadEnv();
 await connectMongo(env.mongoUri);
 // the round and bet indexes changed when rooms were added: bring the database in line (drops indexes the code no longer declares)

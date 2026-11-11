@@ -46,7 +46,13 @@ export function attachWheelSocket(server: Server, d: { hub: WheelHub; sessions: 
         if (!claims || !game || game.status !== 'active' || !player || player.gameId !== game._id || game.slug !== 'lucky-wheel') { ws.close(4401, 'unauthorized'); return; }
         const roomKey = claims.rm ?? MAIN_ROOM;
         if (roomKey !== MAIN_ROOM && !(await d.rooms.get(game, roomKey))) { ws.close(4404, 'room not found'); return; }
-        while (d.hub.socketsOf(player._id) >= MAX_SOCKETS_PER_PLAYER) d.hub.oldestOf(player._id)?.ws.close(4000, 'replaced by a newer connection');
+        // close() only starts the goodbye: take the old connection out of the hub right away, or this loop would never end
+        while (d.hub.socketsOf(player._id) >= MAX_SOCKETS_PER_PLAYER) {
+          const old = d.hub.oldestOf(player._id);
+          if (!old) break;
+          old.ws.close(4000, 'replaced by a newer connection');
+          d.hub.leave(old);
+        }
         client = { ws, playerId: player._id, externalId: player.externalId, isPreview: player.isPreview, balance: player.balance, gameId: game._id, roomKey };
         clearTimeout(timer);
         await d.hub.join(client);

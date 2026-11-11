@@ -18,6 +18,8 @@ export const wheelRepository = {
   /** Reserves a round for payout. Only one server at a time gets it; if that server dies the lease runs out and another takes over. */
   lease: (id: string, now: number, ms: number) =>
     WheelRoundModel.findOneAndUpdate({ _id: id, settled: false, ...notLeased(now) }, { $set: { leaseUntil: now + ms } }, { new: true }).lean<WheelRoundRec>().exec(),
+  /** A long payout keeps its lease alive between batches, so another server never starts the same round. */
+  async extendLease(id: string, until: number) { await WheelRoundModel.updateOne({ _id: id, settled: false }, { $set: { leaseUntil: until } }); },
   async finalize(id: string) { await WheelRoundModel.updateOne({ _id: id }, { $set: { settled: true, leaseUntil: null } }); },
   history: (gameId: string, roomId: string, n = 48) => WheelRoundModel.find({ gameId, roomId, settled: true }).sort({ no: -1 }).limit(n).lean<WheelRoundRec[]>().exec(),
 

@@ -50,10 +50,14 @@ export function createPlayerService(d: { repo: PlayerRepository; ledger: LedgerS
 
     /** Demo mode only: tops a broke player back up to the starting balance. */
     async refill(p: PlayerRec, startingBalance: number) {
-      const delta = startingBalance - p.balance;
-      if (delta <= 0) return p.balance;
-      const r = await inTransaction(s => d.ledger.post({ gameId: p.gameId, playerId: p._id, delta, kind: 'refill', note: 'Free refill' }, s));
-      return r?.balance ?? p.balance;
+      // the amount is worked out inside the transaction from the current balance, so two refills at once cannot both pay out
+      return inTransaction(async s => {
+        const fresh = await d.repo.byId(p._id, s);
+        const delta = startingBalance - (fresh?.balance ?? p.balance);
+        if (!fresh || delta <= 0) return fresh?.balance ?? p.balance;
+        const r = await d.ledger.post({ gameId: p.gameId, playerId: p._id, delta, kind: 'refill', note: 'Free refill' }, s);
+        return r?.balance ?? fresh.balance;
+      });
     },
   };
 }

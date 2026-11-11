@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { ClientSession } from 'mongoose';
 import { badRequest, notFound } from '../../common/errors.js';
+import { safePost } from '../../common/http/safe-fetch.js';
 import { decryptSecret, encryptSecret, rid } from '../../common/utils/crypto.js';
 import type { UserRepository } from '../users/user.repository.js';
 import type { UserRec } from '../users/user.model.js';
@@ -28,7 +29,8 @@ export interface Delivery { ok: boolean; status?: number; error?: string }
  */
 export function createWebhookService(d: { repo: WebhookRepository; users: UserRepository; allowPrivate: boolean; secret: string }) {
   /** The signing secret is stored encrypted: a copy of the database alone is not enough to forge notifications. */
-  const plain = (u: UserRec) => (u.webhookSecret ? decryptSecret(u.webhookSecret, d.secret) : null);
+  // a secret that cannot be read (the server secret changed) counts as "no secret": a new one is made when the address is saved again
+  const plain = (u: UserRec) => { try { return u.webhookSecret ? decryptSecret(u.webhookSecret, d.secret) : null; } catch { return null; } };
   const deliveryView = (e: WebhookEventRec) => ({
     id: e._id, type: e.type, gameId: e.gameId ?? null, status: e.status, attempts: e.attempts, lastStatus: e.lastStatus ?? null,
     lastError: e.lastError ?? null, createdAt: e.createdAt, deliveredAt: e.deliveredAt ?? null, nextAttemptAt: e.status === 'pending' ? e.nextAttemptAt : null,
@@ -87,8 +89,8 @@ export function createWebhookService(d: { repo: WebhookRepository; users: UserRe
           await assertSafeWebhookUrl(u.webhookUrl, d.allowPrivate);
           const body = JSON.stringify(ev.payload);
           const ts = Math.floor(Date.now() / 1000);
-          const res = await fetch(u.webhookUrl, {
-            method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS),
+          const res = await safePost(u.webhookUrl, {
+            allowPrivate: d.allowPrivate, timeoutMs: TIMEOUT_MS,
             headers: {
               'Content-Type': 'application/json', 'User-Agent': 'MiniGameStudio-Webhooks/1',
               'X-Minigame-Event': ev.type, 'X-Minigame-Delivery': ev._id, 'X-Minigame-Timestamp': String(ts),

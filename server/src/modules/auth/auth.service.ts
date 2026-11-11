@@ -10,6 +10,7 @@ import { keyRecord, newApiKey } from '../api-keys/api-key.service.js';
 
 /** Dashboard sign-up and sign-in for buyers. (End players never sign in to us: their client's system does that.) */
 const MAX_FAILS = 8, LOCK_SEC = 300;
+const DUMMY = { salt: '00000000000000000000000000000000', hash: '0'.repeat(64) };
 
 export function createAuthService(d: { users: UserRepository; secret: string; cache: Cache }) {
   const failKey = (email: string) => 'login-fails:' + email;
@@ -39,7 +40,9 @@ export function createAuthService(d: { users: UserRepository; secret: string; ca
       const fails = (await d.cache.getJson<number>(failKey(e))) ?? 0;
       if (fails >= MAX_FAILS) throw new AppError(429, 'Too many wrong attempts. Try again in a few minutes.', 'too_many_attempts');
       const u = await d.users.byEmail(e);
-      if (!u || !(await checkPassword(password, u.passSalt, u.passHash))) {
+      // an unknown address costs the same time as a wrong password, so the answer time does not reveal which accounts exist
+      const valid = u ? await checkPassword(password, u.passSalt, u.passHash) : (await checkPassword(password, DUMMY.salt, DUMMY.hash), false);
+      if (!u || !valid) {
         await d.cache.setJson(failKey(e), fails + 1, LOCK_SEC);
         throw unauthorized('Wrong email or password', 'bad_credentials');
       }

@@ -32,6 +32,7 @@ export function createApp(c: Container) {
   app.use(requestLog);
   app.use(securityHeaders(c.env.publicUrl.startsWith('https://')));
   app.use(cors({ origin: true, allowedHeaders: ['Authorization', 'Content-Type'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] }));
+  app.use(c.limit.failures(120, 60_000));          // an address that keeps sending wrong keys or tokens is slowed down
   app.use(compression());
   app.use(express.json({ limit: '1mb' }));
 

@@ -20,6 +20,8 @@ export interface WheelRoundRec {
   segment: number;
   extra: string[];
   snapshot: Snapshot;
+  /** Where the coins of this round live. Fixed when the round starts, so bets and payouts always go to the same system. */
+  walletMode?: 'demo' | 'managed' | 'seamless';
   settled: boolean;
   /** While a server is paying the round out, nobody else starts until this time. */
   leaseUntil?: number | null;
@@ -33,6 +35,7 @@ const roundSchema = new Schema({
   resultTarget: String, segment: Number,
   extra: { type: [String], default: [] },
   snapshot: { type: Schema.Types.Mixed, required: true },
+  walletMode: String,
   settled: { type: Boolean, default: false },
   leaseUntil: Number,
 }, { versionKey: false });

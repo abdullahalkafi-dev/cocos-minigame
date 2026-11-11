@@ -12,6 +12,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
   if (err?.code === 'LIMIT_FILE_SIZE') { res.status(413).json({ error: 'File is too large (max 12 MB)', code: 'too_large' }); return; }
+  if (err?.name === 'MulterError') { res.status(400).json({ error: 'Send one file in the "file" field', code: 'bad_request' }); return; }
   if (err?.type === 'entity.parse.failed') { res.status(400).json({ error: 'Invalid JSON', code: 'bad_request' }); return; }
   const status = Number(err?.status ?? err?.statusCode);
   if (status >= 400 && status < 500) { res.status(status).json({ error: err.message, code: 'bad_request' }); return; }

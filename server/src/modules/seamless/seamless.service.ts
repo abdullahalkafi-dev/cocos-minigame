@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { ClientSession } from 'mongoose';
 import { AppError, badRequest, paymentRequired } from '../../common/errors.js';
+import { safePost } from '../../common/http/safe-fetch.js';
 import { decryptSecret } from '../../common/utils/crypto.js';
 import { inTransaction, isDuplicateKey } from '../../infra/mongo.js';
 import type { Bus } from '../../infra/bus.js';
@@ -44,8 +45,8 @@ export function createSeamlessService(d: {
       const secret = u.webhookSecret ? decryptSecret(u.webhookSecret, d.secret) : await d.webhooks.ensureSecret(u);
       const text = JSON.stringify({ type, gameId: g?._id ?? null, livemode: g ? g.mode !== 'test' : true, reference, ...body });
       const ts = Math.floor(Date.now() / 1000);
-      const res = await fetch(u.walletUrl, {
-        method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
+      const res = await safePost(u.walletUrl, {
+        allowPrivate: d.allowPrivate, timeoutMs,
         headers: {
           'Content-Type': 'application/json', 'User-Agent': 'MiniGameStudio-Wallet/1',
           'X-Minigame-Event': 'wallet.' + type, 'X-Minigame-Delivery': reference, 'X-Minigame-Timestamp': String(ts),
@@ -53,8 +54,7 @@ export function createSeamlessService(d: {
         },
         body: text,
       });
-      let json: any = null;
-      try { json = await res.json(); } catch { /* not JSON */ }
+      const json: any = res.json;
       const balance = Number.isSafeInteger(json?.balance) && json.balance >= 0 ? (json.balance as number) : undefined;
       if (res.status >= 200 && res.status < 300) return { ok: true, status: res.status, balance };
       if (res.status === 402 || json?.code === 'insufficient_balance') return { ok: false, kind: 'insufficient', status: res.status, error: 'Not enough coins', balance };
@@ -123,6 +123,9 @@ export function createSeamlessService(d: {
         status: 'pending', attempts: skipNow ? 0 : 1, nextAttemptAt: Date.now() + (skipNow ? 2_000 : SEAMLESS_RETRY_MS[0]), createdAt: Date.now(),
       });
     },
+
+    /** Which of these payout references are already stored (so a payout that is run again skips them). */
+    storedCredits: (references: string[], session?: ClientSession) => d.repo.existingIds(references, session),
 
     /** Stores the payout of a win (inside the settlement transaction). The worker sends it. */
     enqueueCredit: (g: GameRec, p: PlayerRec, amount: number, reference: string, note: string, session: ClientSession) =>

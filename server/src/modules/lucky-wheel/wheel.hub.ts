@@ -131,7 +131,7 @@ export function createWheelHub(d: { wheel: WheelService; games: GameService; roo
           rt.winnersJson = { real: JSON.stringify(rt.settle.winners.real), preview: JSON.stringify(rt.settle.winners.preview) };
         } else if (!rt.settling) {
           rt.settling = true;
-          void d.wheel.settleDue(now, { gameId: rt.gameId, roomId: rt.roomKey }).finally(() => { rt.settling = false; });
+          d.wheel.settleDue(now, { gameId: rt.gameId, roomId: rt.roomKey }).catch(e => console.error('hub settle', e)).finally(() => { rt.settling = false; });
         }
       }
       if (now - rt.presenceAt > PRESENCE_EVERY_MS) {
@@ -207,7 +207,7 @@ export function createWheelHub(d: { wheel: WheelService; games: GameService; roo
       if (!rt || !rt.round || rt.round._id !== round._id) return;
       rt.settle = info;
       rt.winnersJson = { real: JSON.stringify(info.winners.real), preview: JSON.stringify(info.winners.preview) };
-      void d.wheel.history(rt.gameId, rt.roomKey).then(h => { rt.history = h; pushRoom(rt); });
+      d.wheel.history(rt.gameId, rt.roomKey).then(h => { rt.history = h; pushRoom(rt); }).catch(e => console.error('hub history', e));
     },
 
     /** A balance changed (bet, win, wallet API, refill): show it to the player's open connections straight away. */
