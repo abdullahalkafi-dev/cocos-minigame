@@ -1,0 +1,92 @@
+import { GAME_CACHE_TTL_SEC } from '../../config/constants.js';
+import { badRequest, notFound } from '../../common/errors.js';
+import { clone, deepMerge } from '../../common/utils/object.js';
+import type { Cache } from '../../infra/cache.js';
+import { fillAssetDefaults, gameBySlug, sanitizeConfig } from '../catalog/index.js';
+import type { GameRepository } from './game.repository.js';
+import type { GameRec } from './game.model.js';
+
+const ORIGIN_RE = /^https?:\/\/[\w.-]+(:\d+)?$/;
+const cacheKey = (id: string) => `game:${id}`;
+
+/** Purchased games: lookup (cached), the merged configuration, and the buyer's changes to it. */
+export function createGameService(d: { repo: GameRepository; cache: Cache; publicUrl: string }) {
+  const absUrl = (u: string) => (u && u.startsWith('/') ? d.publicUrl + u : u);
+
+  const service = {
+    /** Game by id. Cached in Redis; every change below clears the cache. */
+    async get(id: string): Promise<GameRec | null> {
+      const hit = await d.cache.getJson<GameRec>(cacheKey(id));
+      if (hit) return hit;
+      const g = await d.repo.byId(id);
+      if (g) await d.cache.setJson(cacheKey(id), g, GAME_CACHE_TTL_SEC);
+      return g;
+    },
+    ownedBy: (userId: string, id: string) => d.repo.byOwnerAndId(userId, id),
+    listFor: (userId: string, order?: 'newest' | 'oldest') => d.repo.listByUser(userId, order),
+    invalidate: (id: string) => d.cache.del(cacheKey(id)),
+
+    /** Defaults + the buyer's changes, with empty asset slots filled by the built-in artwork. */
+    resolveConfig(game: GameRec): Record<string, any> {
+      const def = gameBySlug(game.slug);
+      return def ? fillAssetDefaults(def, deepMerge(def.defaults, game.config ?? {})) : {};
+    },
+    /** The config sent to the running game: odds are removed and asset urls are made absolute. */
+    publicConfig(game: GameRec) {
+      const cfg: any = clone(service.resolveConfig(game));
+      const walk = (n: any) => {
+        if (Array.isArray(n)) n.forEach(walk);
+        else if (n && typeof n === 'object') for (const k of Object.keys(n)) {
+          if (k === 'url' && typeof n[k] === 'string') n[k] = absUrl(n[k]); else walk(n[k]);
+        }
+      };
+      walk(cfg);
+      if (Array.isArray(cfg.segments)) cfg.segments = cfg.segments.map((x: any) => ({ target: x.target }));
+      return cfg;
+    },
+    view: (g: GameRec) => ({
+      id: g._id, gameId: g._id, name: g.name, game: g.slug, status: g.status,
+      allowedOrigins: g.allowedOrigins ?? [], createdAt: g.createdAt, price: g.price,
+    }),
+
+    detail(game: GameRec) {
+      const def = gameBySlug(game.slug);
+      if (!def) throw notFound('Unknown game', 'unknown_game');
+      return {
+        license: service.view(game), game: { slug: def.slug, name: def.name, manifest: def.manifest, tech: def.tech },
+        config: service.resolveConfig(game), defaults: def.defaults, publicUrl: d.publicUrl,
+      };
+    },
+
+    /** Saves a partial config. It is validated against the manifest and merged, so nothing else is wiped. */
+    async updateConfig(game: GameRec, input: unknown) {
+      const def = gameBySlug(game.slug);
+      if (!def) throw notFound('Unknown game', 'unknown_game');
+      const r = sanitizeConfig(def, input);
+      if (!r.ok) throw badRequest(r.error, 'invalid_config');
+      const merged = deepMerge(game.config ?? {}, r.config);
+      const problem = def.validate?.(fillAssetDefaults(def, deepMerge(def.defaults, merged)));
+      if (problem) throw badRequest(problem, 'invalid_config');
+      await d.repo.update(game._id, { config: merged });
+      await service.invalidate(game._id);
+      return { config: service.resolveConfig({ ...game, config: merged }) };
+    },
+
+    async updateSettings(game: GameRec, input: { name?: unknown; allowedOrigins?: unknown }) {
+      const set: Partial<GameRec> = {};
+      if (input.name !== undefined) {
+        if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 40) throw badRequest('Name must be 1-40 characters');
+        set.name = input.name.trim();
+      }
+      if (input.allowedOrigins !== undefined) {
+        const list = (Array.isArray(input.allowedOrigins) ? input.allowedOrigins : []).map(s => String(s).trim()).filter(Boolean);
+        if (list.some(s => !ORIGIN_RE.test(s))) throw badRequest('Origins look like https://example.com (no path)');
+        set.allowedOrigins = list;
+      }
+      if (Object.keys(set).length) { await d.repo.update(game._id, set); await service.invalidate(game._id); }
+      return { license: service.view({ ...game, ...set }) };
+    },
+  };
+  return service;
+}
+export type GameService = ReturnType<typeof createGameService>;

@@ -28,4 +28,4 @@ VOLUME /data
 EXPOSE 3000
 USER node
 HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://localhost:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "--import", "tsx", "server/src/index.ts"]
+CMD ["node", "--import", "tsx", "server/src/server.ts"]

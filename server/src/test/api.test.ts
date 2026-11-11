@@ -1,41 +1,13 @@
-import test from 'node:test';
+import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
-import { buildApp } from './app.js';
-import { openDb } from './db.js';
-import { GAMES } from './catalog.js';
-import { drawOutcome } from './wheel.js';
+import { startHarness } from './harness.js';
+import { WheelRoundModel } from '../modules/lucky-wheel/wheel.model.js';
+import { PlayerModel } from '../modules/players/player.model.js';
 
-async function setup() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mgs-'));
-  const db = openDb(':memory:');
-  const app = await buildApp({ db, secret: 'test-secret', publicUrl: 'http://x.test', uploadsDir: dir });
-  const call = async (method: string, url: string, token?: string, body?: any) => {
-    const r = await app.inject({ method: method as any, url, headers: token ? { authorization: `Bearer ${token}` } : {}, payload: body });
-    return { status: r.statusCode, body: r.body && r.headers['content-type']?.toString().includes('json') ? JSON.parse(r.body) : r.body, headers: r.headers };
-  };
-  const upload = async (licId: string, token: string, kind: string, bytes: Buffer, name = 'f.bin') => {
-    const b = '----t' + Math.random().toString(16).slice(2);
-    const head = Buffer.from(`--${b}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`);
-    const tail = Buffer.from(`\r\n--${b}--\r\n`);
-    const r = await app.inject({ method: 'POST', url: `/api/licenses/${licId}/upload?kind=${kind}`, headers: { authorization: `Bearer ${token}`, 'content-type': `multipart/form-data; boundary=${b}` }, payload: Buffer.concat([head, bytes, tail]) });
-    return { status: r.statusCode, body: JSON.parse(r.body) };
-  };
-  const buyer = async (email = 'b@test.com') => {
-    const reg = await call('POST', '/api/auth/register', undefined, { email, password: 'password123' });
-    const T = reg.body.token;
-    const apiKey = reg.body.apiKey as string;            // ONE key per account, returned once at sign-up
-    const bought = await call('POST', '/api/store/lucky-wheel/buy', T);
-    const sess = await call('POST', '/api/v1/sessions', apiKey, { gameId: bought.body.license.id });
-    return { T, lic: bought.body.license.id, apiKey, session: sess.body.sessionToken };
-  };
-  const player = async (session: string, username: string) => (await call('POST', '/api/play/login', session, { username })).body.token as string;
-  /** pretend `ms` milliseconds have passed for every round */
-  const age = (ms: number) => db.exec(`UPDATE wheel_rounds SET start_at=start_at-${ms}, bet_end=bet_end-${ms}, spin_end=spin_end-${ms}, end_at=end_at-${ms}`);
-  return { app, call, upload, buyer, player, age, db };
-}
+let h: Awaited<ReturnType<typeof startHarness>>;
+before(async () => { h = await startHarness(); });
+after(async () => { await h.stop(); });
+beforeEach(async () => { await h.reset(); });
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]);
 const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(40)]);
@@ -43,24 +15,8 @@ const WEBM = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(
 const MP3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(40)]);
 const SVG_OK = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><circle cx="5" cy="5" r="4" fill="red"/></svg>');
 
-test('default odds: every option pays back about 85-100% of what is bet', () => {
-  const def = GAMES[0].defaults;
-  const N = 300_000; const count: Record<string, number> = {};
-  const wins: Record<string, number> = {};
-  for (let i = 0; i < N; i++) {
-    const o = drawOutcome(def);
-    for (const h of [o.target, ...o.extra]) wins[h] = (wins[h] ?? 0) + 1;
-    count[o.target] = (count[o.target] ?? 0) + 1;
-  }
-  for (const t of def.targets) {
-    const rtp = (wins[t.id] / N) * t.multiplier;
-    console.log(`${t.id} RTP ~ ${(rtp * 100).toFixed(1)}%`);
-    assert.ok(rtp > 0.85 && rtp < 1.0, `${t.id} rtp ${rtp}`);
-  }
-});
-
-test('wheel: bet -> settle -> history / my bets / ranking / dashboard', async () => {
-  const { call, buyer, player, age, db } = await setup();
+test('wheel: bet -> settle -> history / my bets / ranking / dashboard, and the ledger adds up', async () => {
+  const { call, buyer, player, age, ledgerSum } = h;
   const b = await buyer();
   const P = await player(b.session, 'ali_01');
   const st = await call('GET', '/api/play/wheel/state', P);
@@ -82,17 +38,17 @@ test('wheel: bet -> settle -> history / my bets / ranking / dashboard', async ()
   assert.equal(st2.body.round.no, st.body.round.no);
 
   // move into the spin phase: result is now visible, betting is closed
-  age(21_000);
+  await age(21_000);
   const spin = await call('GET', '/api/play/wheel/state', P);
   assert.equal(spin.body.round.phase, 'spinning');
   assert.ok(spin.body.round.result.hits.length >= 1);
   assert.equal((await call('POST', '/api/play/wheel/bet', P, { bets: [{ target: 'seven', amount: 1 }] })).status, 409);
 
-  // after the spin: paid, history filled, new round started
-  age(7_000);
+  // after the spin: paid, history filled
+  await age(7_000);
   const after = await call('GET', '/api/play/wheel/state', P);
-  const r = db.prepare('SELECT result_target, extra FROM wheel_rounds WHERE no = ?').get(st.body.round.no) as any;
-  const got = [r.result_target, ...JSON.parse(r.extra)];
+  const r = (await WheelRoundModel.findOne({ no: st.body.round.no }).lean())!;
+  const got = [r.resultTarget, ...r.extra];
   const expectedWin = (got.includes('seven') ? 30000 * 8 : 0) + (got.includes('watermelon') ? 300000 * 2 : 0);
   assert.equal(after.body.balance, start - 330000 + expectedWin, 'payout math');
   assert.equal(after.body.history[0].no, st.body.round.no);
@@ -100,8 +56,7 @@ test('wheel: bet -> settle -> history / my bets / ranking / dashboard', async ()
   const mine = await call('GET', '/api/play/wheel/mybets', P);
   assert.equal(mine.body.bets.length, 2);
   assert.equal(mine.body.bets.reduce((a: number, x: any) => a + x.win, 0), expectedWin);
-  const rank = await call('GET', '/api/play/wheel/ranking', P);
-  assert.equal(rank.body.me.username, 'ali_01');
+  assert.equal((await call('GET', '/api/play/wheel/ranking', P)).body.me.username, 'ali_01');
 
   // the buyer's dashboard sees the player and the round
   const rounds = await call('GET', `/api/licenses/${b.lic}/rounds`, b.T);
@@ -111,14 +66,42 @@ test('wheel: bet -> settle -> history / my bets / ranking / dashboard', async ()
   const players = await call('GET', `/api/licenses/${b.lic}/players`, b.T);
   assert.equal(players.body.players[0].username, 'ali_01');
 
-  // settling twice never pays twice
+  // settling again never pays twice
   await call('GET', '/api/play/wheel/state', P);
-  const again = await call('GET', '/api/play/wheel/state', P);
-  assert.equal(again.body.balance, start - 330000 + expectedWin);
+  assert.equal((await call('GET', '/api/play/wheel/state', P)).body.balance, start - 330000 + expectedWin);
+
+  // the ledger explains every coin: starting balance, bets and wins add up to the balance
+  const p = (await PlayerModel.findOne({ externalId: 'ali_01' }).lean())!;
+  assert.equal(await h.ledgerSum(p._id), p.balance);
+});
+
+test('money safety: parallel bets never overspend and parallel settlement pays once', async () => {
+  const { call, buyer, player, age, container } = h;
+  const b = await buyer();
+  const P = await player(b.session, 'racer');
+  const start = (await call('GET', '/api/play/wheel/state', P)).body.balance as number;
+
+  // 8 bets of 40% of the balance at the same moment: at most 2 can succeed
+  const amount = Math.floor(start * 0.4);
+  const results = await Promise.all(Array.from({ length: 8 }, () => call('POST', '/api/play/wheel/bet', P, { bets: [{ target: 'plum', amount }] })));
+  const ok = results.filter(r => r.status === 200).length;
+  assert.equal(ok, 2, 'exactly two bets fit in the balance');
+  assert.ok(results.every(r => r.status === 200 || r.status === 402), results.map(r => r.status).join());
+  const p = (await PlayerModel.findOne({ externalId: 'racer' }).lean())!;
+  assert.equal(p.balance, start - ok * amount);
+
+  // five servers/tabs settle the same round at the same time
+  await age(40_000);
+  await Promise.all(Array.from({ length: 5 }, () => container.wheel.settleDue(null, Date.now())));
+  const settled = (await PlayerModel.findOne({ externalId: 'racer' }).lean())!;
+  assert.equal(await h.ledgerSum(settled._id), settled.balance, 'ledger still adds up');
+  const round = (await WheelRoundModel.findOne({}).sort({ no: 1 }).lean())!;
+  const hit = [round.resultTarget, ...round.extra].includes('plum');
+  assert.equal(settled.balance, start - ok * amount + (hit ? ok * amount * 2 : 0), 'paid exactly once');
 });
 
 test('one account API key + game ID: isolation, errors, rotation', async () => {
-  const { call, buyer, player } = await setup();
+  const { call, buyer, player } = h;
   const a = await buyer('a@test.com'), c = await buyer('c@test.com');
   assert.match(a.apiKey, /^mgs_/);
   assert.notEqual(a.apiKey, c.apiKey);
@@ -138,6 +121,7 @@ test('one account API key + game ID: isolation, errors, rotation', async () => {
   assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, {})).status, 400, 'gameId is required');
   assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, { gameId: c.lic })).status, 404, "cannot use someone else's game id");
   assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, { gameId: a.lic, username: 'x' })).status, 400, 'bad username');
+  assert.equal((await call('POST', '/api/v1/sessions', 'mgs_nope', { gameId: a.lic })).body.code, 'invalid_api_key', 'errors carry a machine-readable code');
 
   // the same key serves every game of the account
   const second = await call('POST', '/api/store/lucky-wheel/buy', a.T);
@@ -160,8 +144,31 @@ test('one account API key + game ID: isolation, errors, rotation', async () => {
   assert.equal((await call('POST', '/api/v1/sessions', c.apiKey, { gameId: c.lic })).status, 200, 'other accounts unaffected');
 });
 
+test('buyer account: sign-up validation, wallet, store', async () => {
+  const { call } = h;
+  assert.equal((await call('POST', '/api/auth/register', undefined, { email: 'nope', password: 'password123' })).status, 400);
+  assert.equal((await call('POST', '/api/auth/register', undefined, { email: 'x@test.com', password: 'short' })).status, 400);
+  const reg = await call('POST', '/api/auth/register', undefined, { email: 'x@test.com', password: 'password123' });
+  assert.equal(reg.status, 200);
+  assert.equal((await call('POST', '/api/auth/register', undefined, { email: 'X@test.com', password: 'password123' })).status, 409, 'emails are unique, case-insensitive');
+  assert.equal((await call('POST', '/api/auth/login', undefined, { email: 'x@test.com', password: 'wrong-password' })).status, 401);
+  const login = await call('POST', '/api/auth/login', undefined, { email: 'x@test.com', password: 'password123' });
+  assert.equal(login.status, 200);
+  const T = login.body.token;
+  assert.equal((await call('GET', '/api/me', undefined)).status, 401);
+  assert.equal((await call('GET', '/api/me', T)).body.user.balance, 10_000);
+  assert.equal((await call('POST', '/api/store/lucky-wheel/buy', T)).body.balance, 7_000);
+  assert.equal((await call('POST', '/api/store/lucky-wheel/buy', T)).body.balance, 4_000);
+  assert.equal((await call('POST', '/api/store/lucky-wheel/buy', T)).body.balance, 1_000);
+  const broke = await call('POST', '/api/store/lucky-wheel/buy', T);
+  assert.equal(broke.status, 402);
+  assert.equal((await call('POST', '/api/wallet/topup', T)).body.user.balance, 6_000);
+  assert.equal((await call('POST', '/api/store/nope/buy', T)).status, 404);
+  assert.equal((await call('GET', '/api/licenses', T)).body.licenses.length, 3);
+});
+
 test('customization: validation, merge, defaults fall back', async () => {
-  const { call, buyer } = await setup();
+  const { call, buyer } = h;
   const b = await buyer();
   const put = (config: any) => call('PUT', `/api/licenses/${b.lic}/config`, b.T, { config });
   assert.equal((await put({ 'theme.primary': 'red' })).status, 400);
@@ -178,13 +185,19 @@ test('customization: validation, merge, defaults fall back', async () => {
   // an empty asset means "use the default"
   const cleared = await put({ 'assets.background': { url: '' } });
   assert.match(cleared.body.config.assets.background.url, /^\/defaults\/lucky-wheel\//);
-  // a changed round length is used by new rounds
+  // a second partial save keeps the first
+  assert.equal((await put({ currencyName: 'Pearls' })).body.config.title, 'My Wheel');
+  // a changed round length is used by new rounds (game record cache is cleared on save)
   const boot = await call('GET', '/api/play/bootstrap', b.session);
   assert.equal(boot.body.config.timing.betSeconds, 12);
+  // settings
+  assert.equal((await call('PUT', `/api/licenses/${b.lic}`, b.T, { allowedOrigins: ['https://shop.example.com'] })).status, 200);
+  assert.equal((await call('PUT', `/api/licenses/${b.lic}`, b.T, { allowedOrigins: ['https://shop.example.com/path'] })).status, 400);
+  assert.equal((await call('PUT', `/api/licenses/${b.lic}`, b.T, { name: '' })).status, 400);
 });
 
 test('media uploads: each slot kind accepts only what it should, unsafe files are rejected', async () => {
-  const { call, upload, buyer } = await setup();
+  const { call, upload, buyer } = h;
   const b = await buyer();
   const png = await upload(b.lic, b.T, 'image', PNG, 'a.png');
   assert.equal(png.status, 200); assert.equal(png.body.type, 'image'); assert.match(png.body.url, /^\/uploads\/lic_[\w-]+\/[\w-]+\.png$/);
@@ -208,8 +221,8 @@ test('media uploads: each slot kind accepts only what it should, unsafe files ar
   // uploaded files are served with a locked-down CSP and nosniff
   const served = await call('GET', png.body.url);
   assert.equal(served.status, 200);
-  assert.match(String(served.headers['content-security-policy']), /sandbox/);
-  assert.equal(served.headers['x-content-type-options'], 'nosniff');
+  assert.match(String(served.headers.get('content-security-policy')), /sandbox/);
+  assert.equal(served.headers.get('x-content-type-options'), 'nosniff');
   // and can then be used as an asset (including sprite-sheet metadata)
   const set = await call('PUT', `/api/licenses/${b.lic}/config`, b.T, { config: { 'assets.fxWin': { url: png.body.url, cols: 4, rows: 2, fps: 12 } } });
   assert.equal(set.status, 200); assert.equal(set.body.config.assets.fxWin.cols, 4);

@@ -3,13 +3,24 @@ services:
   minigames:
     build: .
     restart: unless-stopped
+    depends_on: [redis]
     ports:
       # bound to localhost only; put nginx/caddy in front for public access
       - "127.0.0.1:${HOST_PORT:-3000}:3000"
     environment:
       # the address clients use, e.g. https://minigame.example.com
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      MONGODB_URI: ${MONGODB_URI:?set MONGODB_URI in .env}
+      REDIS_URL: redis://redis:6379
     volumes:
       - minigames-data:/data
+
+  # Cache + shared rate limits. Not published to the host: only the app can reach it.
+  # Nothing in it is precious (everything can be rebuilt from MongoDB), so no persistence is needed.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+
 volumes:
   minigames-data:
