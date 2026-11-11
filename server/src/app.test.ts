@@ -6,156 +6,189 @@ import fs from 'node:fs';
 import { buildApp } from './app.js';
 import { openDb } from './db.js';
 import { GAMES } from './catalog.js';
-import { playSpin } from './engine/spin.js';
-import { playSlots } from './engine/slots.js';
+import { drawOutcome } from './wheel.js';
 
 async function setup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mgs-'));
-  const app = await buildApp({ db: openDb(':memory:'), secret: 'test-secret', publicUrl: 'http://x.test', uploadsDir: dir });
+  const db = openDb(':memory:');
+  const app = await buildApp({ db, secret: 'test-secret', publicUrl: 'http://x.test', uploadsDir: dir });
   const call = async (method: string, url: string, token?: string, body?: any) => {
     const r = await app.inject({ method: method as any, url, headers: token ? { authorization: `Bearer ${token}` } : {}, payload: body });
-    return { status: r.statusCode, body: r.body ? JSON.parse(r.body) : null, raw: r };
+    return { status: r.statusCode, body: r.body && r.headers['content-type']?.toString().includes('json') ? JSON.parse(r.body) : r.body, headers: r.headers };
   };
-  return { app, call };
+  const upload = async (licId: string, token: string, kind: string, bytes: Buffer, name = 'f.bin') => {
+    const b = '----t' + Math.random().toString(16).slice(2);
+    const head = Buffer.from(`--${b}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: application/octet-stream\r\n\r\n`);
+    const tail = Buffer.from(`\r\n--${b}--\r\n`);
+    const r = await app.inject({ method: 'POST', url: `/api/licenses/${licId}/upload?kind=${kind}`, headers: { authorization: `Bearer ${token}`, 'content-type': `multipart/form-data; boundary=${b}` }, payload: Buffer.concat([head, bytes, tail]) });
+    return { status: r.statusCode, body: JSON.parse(r.body) };
+  };
+  const buyer = async (email = 'b@test.com') => {
+    const reg = await call('POST', '/api/auth/register', undefined, { email, password: 'password123' });
+    const T = reg.body.token;
+    const bought = await call('POST', '/api/store/lucky-wheel/buy', T);
+    const sess = await call('POST', '/api/v1/sessions', bought.body.licenseKey, {});
+    return { T, lic: bought.body.license.id, key: bought.body.licenseKey, session: sess.body.sessionToken };
+  };
+  const player = async (session: string, username: string) => (await call('POST', '/api/play/login', session, { username })).body.token as string;
+  /** pretend `ms` milliseconds have passed for every round */
+  const age = (ms: number) => db.exec(`UPDATE wheel_rounds SET start_at=start_at-${ms}, bet_end=bet_end-${ms}, spin_end=spin_end-${ms}, end_at=end_at-${ms}`);
+  return { app, call, upload, buyer, player, age, db };
 }
 
-test('RTP of default games is realistic (80%-100%)', () => {
-  const N = 200_000;
-  for (const slug of ['lucky-spin', 'lucky-77']) {
-    const def = GAMES.find(g => g.slug === slug)!;
-    let bet = 0, win = 0;
-    for (let i = 0; i < N; i++) {
-      bet += 100;
-      win += slug === 'lucky-spin' ? playSpin(def.defaults.prizes, 100).win : playSlots(def.defaults.symbols, 100).win;
-    }
-    const rtp = win / bet;
-    console.log(`${slug} RTP ~ ${(rtp * 100).toFixed(1)}%`);
-    assert.ok(rtp > 0.8 && rtp < 1.0, `${slug} rtp ${rtp}`);
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]);
+const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(40)]);
+const WEBM = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(40)]);
+const MP3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(40)]);
+const SVG_OK = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><circle cx="5" cy="5" r="4" fill="red"/></svg>');
+
+test('default odds: every option pays back about 85-100% of what is bet', () => {
+  const def = GAMES[0].defaults;
+  const N = 300_000; const count: Record<string, number> = {};
+  const wins: Record<string, number> = {};
+  for (let i = 0; i < N; i++) {
+    const o = drawOutcome(def);
+    for (const h of [o.target, ...o.extra]) wins[h] = (wins[h] ?? 0) + 1;
+    count[o.target] = (count[o.target] ?? 0) + 1;
+  }
+  for (const t of def.targets) {
+    const rtp = (wins[t.id] / N) * t.multiplier;
+    console.log(`${t.id} RTP ~ ${(rtp * 100).toFixed(1)}%`);
+    assert.ok(rtp > 0.85 && rtp < 1.0, `${t.id} rtp ${rtp}`);
   }
 });
 
-test('full buyer -> license -> session -> player -> dashboard flow', async () => {
-  const { app, call } = await setup();
-  const reg = await call('POST', '/api/auth/register', undefined, { email: 'buyer@test.com', password: 'password123' });
-  assert.equal(reg.status, 200);
-  const T = reg.body.token;
-  assert.equal(reg.body.user.balance, 10000);
+test('wheel: bet -> settle -> history / my bets / ranking / dashboard', async () => {
+  const { call, buyer, player, age, db } = await setup();
+  const b = await buyer();
+  const P = await player(b.session, 'ali_01');
+  const st = await call('GET', '/api/play/wheel/state', P);
+  assert.equal(st.status, 200);
+  assert.equal(st.body.round.phase, 'betting');
+  assert.equal(st.body.round.result, null, 'outcome must not be revealed while betting');
+  assert.ok(!JSON.stringify(st.body).includes('segment'), 'no segment index while betting');
+  const start = st.body.balance;
 
-  // buy two copies of the same game
-  const b1 = await call('POST', '/api/store/lucky-spin/buy', T);
-  const b2 = await call('POST', '/api/store/lucky-spin/buy', T);
-  assert.equal(b1.status, 200);
-  assert.match(b1.body.licenseKey, /^mgk_/);
-  assert.notEqual(b1.body.licenseKey, b2.body.licenseKey);
-  assert.equal(b2.body.balance, 10000 - 3000);
-  const lic1 = b1.body.license.id, lic2 = b2.body.license.id;
+  assert.equal((await call('POST', '/api/play/wheel/bet', P, { bets: [{ target: 'nope', amount: 1000 }] })).status, 400);
+  assert.equal((await call('POST', '/api/play/wheel/bet', P, { bets: [{ target: 'seven', amount: -5 }] })).status, 400);
+  assert.equal((await call('POST', '/api/play/wheel/bet', P, { bets: [{ target: 'seven', amount: start + 1 }] })).status, 402);
+  const bet = await call('POST', '/api/play/wheel/bet', P, { bets: [{ target: 'seven', amount: 30000 }, { target: 'watermelon', amount: 300000 }] });
+  assert.equal(bet.status, 200);
+  assert.equal(bet.body.balance, start - 330000);
+  const st2 = await call('GET', '/api/play/wheel/state', P);
+  assert.equal(st2.body.mine.seven, 30000);
+  assert.equal(st2.body.pot.watermelon, 300000);
+  assert.equal(st2.body.round.no, st.body.round.no);
 
-  // can't overspend
-  assert.equal((await call('POST', '/api/store/lucky-77/buy', T)).status, 200);
-  assert.equal((await call('POST', '/api/store/lucky-77/buy', T)).status, 200);
-  assert.equal((await call('POST', '/api/store/lucky-77/buy', T)).status, 402);
+  // move into the spin phase: result is now visible, betting is closed
+  age(21_000);
+  const spin = await call('GET', '/api/play/wheel/state', P);
+  assert.equal(spin.body.round.phase, 'spinning');
+  assert.ok(spin.body.round.result.hits.length >= 1);
+  assert.equal((await call('POST', '/api/play/wheel/bet', P, { bets: [{ target: 'seven', amount: 1 }] })).status, 409);
 
-  // customize copy 1 only
-  const cfg = await call('PUT', `/api/licenses/${lic1}/config`, T, { config: { title: 'Casino One', startingBalance: 500, 'theme.primary': '#00ff00', betOptions: '5,25' } });
-  assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
-  assert.equal((await call('PUT', `/api/licenses/${lic1}/config`, T, { config: { 'theme.primary': 'red' } })).status, 400);
-  // partial updates merge instead of wiping the other settings
-  const part = await call('PUT', `/api/licenses/${lic1}/config`, T, { config: { currencyName: 'Gems' } });
-  assert.equal(part.body.config.currencyName, 'Gems');
-  assert.equal(part.body.config.title, 'Casino One');
-  assert.equal(part.body.config.theme.primary, '#00ff00');
-  await call('PUT', `/api/licenses/${lic1}/config`, T, { config: { currencyName: 'Coins' } });
+  // after the spin: paid, history filled, new round started
+  age(7_000);
+  const after = await call('GET', '/api/play/wheel/state', P);
+  const r = db.prepare('SELECT result_target, extra FROM wheel_rounds WHERE no = ?').get(st.body.round.no) as any;
+  const got = [r.result_target, ...JSON.parse(r.extra)];
+  const expectedWin = (got.includes('seven') ? 30000 * 8 : 0) + (got.includes('watermelon') ? 300000 * 2 : 0);
+  assert.equal(after.body.balance, start - 330000 + expectedWin, 'payout math');
+  assert.equal(after.body.history[0].no, st.body.round.no);
 
-  // wrong / missing key is rejected
-  assert.equal((await call('POST', '/api/v1/sessions', 'mgk_nope', {})).status, 401);
-  // the user (dashboard) token must NOT work as a license key
-  assert.equal((await call('POST', '/api/v1/sessions', T, {})).status, 401);
+  const mine = await call('GET', '/api/play/wheel/mybets', P);
+  assert.equal(mine.body.bets.length, 2);
+  assert.equal(mine.body.bets.reduce((a: number, x: any) => a + x.win, 0), expectedWin);
+  const rank = await call('GET', '/api/play/wheel/ranking', P);
+  assert.equal(rank.body.me.username, 'ali_01');
 
-  // buyer backend mints sessions with the secret key
-  const s1 = await call('POST', '/api/v1/sessions', b1.body.licenseKey, {});
-  const s2 = await call('POST', '/api/v1/sessions', b2.body.licenseKey, {});
-  assert.equal(s1.status, 200);
-  assert.match(s1.body.playUrl, /^http:\/\/x\.test\/g\/lucky-spin\/\?session=/);
-
-  // same game, two different looks
-  const boot1 = await call('GET', '/api/play/bootstrap', s1.body.sessionToken);
-  const boot2 = await call('GET', '/api/play/bootstrap', s2.body.sessionToken);
-  assert.equal(boot1.body.config.title, 'Casino One');
-  assert.equal(boot2.body.config.title, 'Lucky Spin');
-  assert.equal(boot1.body.config.theme.primary, '#00ff00');
-  assert.equal(boot1.body.config.prizes[0].weight, undefined, 'odds must not leak to the client');
-  assert.equal(boot1.body.player, null);
-
-  // play requires username; usernames are unique per license, not global
-  assert.equal((await call('POST', '/api/play/spin', s1.body.sessionToken, { bet: 5 })).status, 401);
-  assert.equal((await call('POST', '/api/play/login', s1.body.sessionToken, { username: 'a' })).status, 400);
-  const l1 = await call('POST', '/api/play/login', s1.body.sessionToken, { username: 'ali_01' });
-  const l2 = await call('POST', '/api/play/login', s2.body.sessionToken, { username: 'ali_01' });
-  assert.equal(l1.body.player.balance, 500);
-  assert.equal(l2.body.player.balance, 1000);
-  const P = l1.body.token;
-
-  assert.equal((await call('POST', '/api/play/spin', P, { bet: 999 })).status, 400);
-  let balance = 500, rounds = 0;
-  for (let i = 0; i < 20; i++) {
-    const r = await call('POST', '/api/play/spin', P, { bet: 25 });
-    if (r.status === 402) break;
-    assert.equal(r.status, 200);
-    balance = balance - 25 + r.body.result.win;
-    assert.equal(r.body.balance, balance, 'server balance math');
-    rounds++;
-  }
-  // slots endpoint on a spin license is rejected
-  assert.equal((await call('POST', '/api/play/slots', P, { bet: 25 })).status, 400);
-
-  // dashboard sees the player and rounds; license 2 sees nothing
-  const players = await call('GET', `/api/licenses/${lic1}/players`, T);
-  assert.equal(players.body.players.length, 1);
+  // the buyer's dashboard sees the player and the round
+  const rounds = await call('GET', `/api/licenses/${b.lic}/rounds`, b.T);
+  assert.equal(rounds.body.rounds.length, 1);
+  assert.equal(rounds.body.rounds[0].bet, 330000);
+  assert.equal(rounds.body.rounds[0].win, expectedWin);
+  const players = await call('GET', `/api/licenses/${b.lic}/players`, b.T);
   assert.equal(players.body.players[0].username, 'ali_01');
-  assert.equal(players.body.players[0].rounds, rounds);
-  const rs = await call('GET', `/api/licenses/${lic1}/rounds`, T);
-  assert.equal(rs.body.rounds.length, rounds);
-  assert.ok(rs.body.rounds[0].outcome.summary);
-  const st = await call('GET', `/api/licenses/${lic1}/stats`, T);
-  assert.equal(st.body.totals.rounds, rounds);
-  assert.equal((await call('GET', `/api/licenses/${lic2}/rounds`, T)).body.rounds.length, 0);
-  const csv = await call('GET', `/api/licenses/${lic1}/export.csv?kind=rounds`, T).catch(() => null);
-  assert.ok(csv === null || csv.raw.statusCode === 200);
 
-  // another buyer cannot read this license
-  const other = await call('POST', '/api/auth/register', undefined, { email: 'other@test.com', password: 'password123' });
-  assert.equal((await call('GET', `/api/licenses/${lic1}`, other.body.token)).status, 404);
-
-  // key rotation invalidates the old key
-  const rot = await call('POST', `/api/licenses/${lic1}/rotate-key`, T);
-  assert.equal((await call('POST', '/api/v1/sessions', b1.body.licenseKey, {})).status, 401);
-  assert.equal((await call('POST', '/api/v1/sessions', rot.body.licenseKey, {})).status, 200);
-
-  // preset username skips the login screen
-  const pre = await call('POST', '/api/v1/sessions', rot.body.licenseKey, { username: 'from_app' });
-  const bootPre = await call('GET', '/api/play/bootstrap', pre.body.sessionToken);
-  assert.equal(bootPre.body.player.username, 'from_app');
-  assert.ok(bootPre.body.token);
-  await app.close();
+  // settling twice never pays twice
+  await call('GET', '/api/play/wheel/state', P);
+  const again = await call('GET', '/api/play/wheel/state', P);
+  assert.equal(again.body.balance, start - 330000 + expectedWin);
 });
 
-test('slots + ludo flows', async () => {
-  const { app, call } = await setup();
-  const T = (await call('POST', '/api/auth/register', undefined, { email: 'x@test.com', password: 'password123' })).body.token;
-  const slot = await call('POST', '/api/store/lucky-77/buy', T);
-  const ludo = await call('POST', '/api/store/ludo/buy', T);
-  const ps = (await call('POST', '/api/play/login', (await call('POST', '/api/v1/sessions', slot.body.licenseKey, {})).body.sessionToken, { username: 'slotter' })).body.token;
-  const r = await call('POST', '/api/play/slots', ps, { bet: 50 });
-  assert.equal(r.status, 200);
-  assert.equal(r.body.result.grid.length, 3);
-  assert.equal(r.body.balance, 1000 - 50 + r.body.result.win);
+test('licenses are isolated, usernames unique per license, keys stay secret', async () => {
+  const { call, buyer, player } = await setup();
+  const a = await buyer('a@test.com'), c = await buyer('c@test.com');
+  const Pa = await player(a.session, 'same_name'), Pc = await player(c.session, 'same_name');
+  await call('POST', '/api/play/wheel/bet', Pa, { bets: [{ target: 'plum', amount: 30000 }] });
+  const stC = await call('GET', '/api/play/wheel/state', Pc);
+  assert.equal(stC.body.pot.plum, undefined, 'other license does not see the bet');
+  assert.equal(stC.body.balance, 5_000_000);
+  assert.equal((await call('GET', `/api/licenses/${a.lic}`, c.T)).status, 404);
+  assert.equal((await call('POST', '/api/v1/sessions', c.T, {})).status, 401, 'dashboard token is not a license key');
+  assert.equal((await call('POST', '/api/v1/sessions', 'mgk_nope', {})).status, 401);
+  const boot = await call('GET', '/api/play/bootstrap', a.session);
+  assert.ok(boot.body.config.assets.background.url.startsWith('http://x.test/defaults/'), 'asset urls are absolute');
+  assert.equal(boot.body.config.segments[0].weight, undefined, 'odds do not leak');
+  const rot = await call('POST', `/api/licenses/${a.lic}/rotate-key`, a.T);
+  assert.equal((await call('POST', '/api/v1/sessions', a.key, {})).status, 401);
+  assert.equal((await call('POST', '/api/v1/sessions', rot.body.licenseKey, {})).status, 200);
+});
 
-  const pl = (await call('POST', '/api/play/login', (await call('POST', '/api/v1/sessions', ludo.body.licenseKey, {})).body.sessionToken, { username: 'rollie' })).body.token;
-  const st = await call('POST', '/api/play/ludo/start', pl);
-  assert.equal(st.body.balance, 900);
-  const fin = await call('POST', '/api/play/ludo/finish', pl, { matchId: st.body.matchId, placement: 1 });
-  assert.equal(fin.body.win, 350);
-  assert.equal(fin.body.balance, 1250);
-  assert.equal((await call('POST', '/api/play/ludo/finish', pl, { matchId: st.body.matchId, placement: 1 })).status, 404, 'cannot claim twice');
-  await app.close();
+test('customization: validation, merge, defaults fall back', async () => {
+  const { call, buyer } = await setup();
+  const b = await buyer();
+  const put = (config: any) => call('PUT', `/api/licenses/${b.lic}/config`, b.T, { config });
+  assert.equal((await put({ 'theme.primary': 'red' })).status, 400);
+  assert.equal((await put({ 'assets.background': { url: 'https://evil.example/x.png' } })).status, 400);
+  assert.equal((await put({ 'assets.background': { url: '/uploads/lic_other/../../etc/passwd' } })).status, 400);
+  assert.equal((await put({ 'timing.betSeconds': 1 })).status, 400);
+  assert.equal((await put({ segments: [{ target: 'seven' }, { target: 'ghost' }, { target: 'plum' }, { target: 'plum' }] })).status, 400, 'segment must reference an option');
+  assert.equal((await put({ targets: [{ id: 'A!', label: 'x', multiplier: 2 }, { id: 'b', label: 'y', multiplier: 3 }] })).status, 400);
+  const ok = await put({ title: 'My Wheel', currencyName: 'Gems', 'timing.betSeconds': 12, 'texts.howToPlay': ['one', 'two'] });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.config.title, 'My Wheel');
+  assert.equal(ok.body.config.texts.howToPlay.length, 2);
+  assert.equal(ok.body.config.texts.goodLuckTitle, 'GOOD LUCK', 'untouched texts keep defaults');
+  // an empty asset means "use the default"
+  const cleared = await put({ 'assets.background': { url: '' } });
+  assert.match(cleared.body.config.assets.background.url, /^\/defaults\/lucky-wheel\//);
+  // a changed round length is used by new rounds
+  const boot = await call('GET', '/api/play/bootstrap', b.session);
+  assert.equal(boot.body.config.timing.betSeconds, 12);
+});
+
+test('media uploads: each slot kind accepts only what it should, unsafe files are rejected', async () => {
+  const { call, upload, buyer } = await setup();
+  const b = await buyer();
+  const png = await upload(b.lic, b.T, 'image', PNG, 'a.png');
+  assert.equal(png.status, 200); assert.equal(png.body.type, 'image'); assert.match(png.body.url, /^\/uploads\/lic_[\w-]+\/[\w-]+\.png$/);
+  assert.equal((await upload(b.lic, b.T, 'image', SVG_OK, 'a.svg')).body.type, 'svg');
+  assert.equal((await upload(b.lic, b.T, 'media', MP4, 'v.mp4')).body.type, 'video');
+  assert.equal((await upload(b.lic, b.T, 'video', WEBM, 'v.webm')).body.type, 'video');
+  assert.equal((await upload(b.lic, b.T, 'audio', MP3, 'a.mp3')).body.type, 'audio');
+  // wrong kind for the slot
+  assert.equal((await upload(b.lic, b.T, 'image', MP4, 'v.mp4')).status, 400);
+  assert.equal((await upload(b.lic, b.T, 'audio', PNG, 'a.png')).status, 400);
+  assert.equal((await upload(b.lic, b.T, 'video', PNG, 'a.png')).status, 400);
+  // dangerous / unknown
+  for (const bad of [
+    '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example/x.png"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><a xlink:href="javascript:alert(1)"><rect/></a></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div/></foreignObject></svg>',
+  ]) assert.equal((await upload(b.lic, b.T, 'image', Buffer.from(bad), 'x.svg')).status, 400, bad);
+  assert.equal((await upload(b.lic, b.T, 'image', Buffer.from('MZ this is an exe pretending to be a picture........'), 'x.png')).status, 400);
+  // uploaded files are served with a locked-down CSP and nosniff
+  const served = await call('GET', png.body.url);
+  assert.equal(served.status, 200);
+  assert.match(String(served.headers['content-security-policy']), /sandbox/);
+  assert.equal(served.headers['x-content-type-options'], 'nosniff');
+  // and can then be used as an asset (including sprite-sheet metadata)
+  const set = await call('PUT', `/api/licenses/${b.lic}/config`, b.T, { config: { 'assets.fxWin': { url: png.body.url, cols: 4, rows: 2, fps: 12 } } });
+  assert.equal(set.status, 200); assert.equal(set.body.config.assets.fxWin.cols, 4);
+  // another buyer cannot upload into this license
+  const other = await call('POST', '/api/auth/register', undefined, { email: 'o@test.com', password: 'password123' });
+  assert.equal((await upload(b.lic, other.body.token, 'image', PNG)).status, 404);
 });

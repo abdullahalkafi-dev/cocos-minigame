@@ -2,8 +2,8 @@
 
 A demo product for selling reusable, customizable mini games:
 
-- **3 games** built with Cocos Creator 3.8 (Lucky Spin, Lucky 77, Ludo Royale)
-- **Buyer dashboard**: sign up, buy games with demo credits, customize them, see players and results
+- **Lucky Wheel 77**: a live betting-wheel game built with Cocos Creator 3.8, where every visual (image, SVG, video, sound), rule, odd, chip and text is a dynamic setting
+- **Buyer dashboard**: sign up, buy games with demo credits, customize them in an asset studio with live preview, see players and results
 - **License keys + session API**: a buyer's server creates short-lived play links; the game runs in any website or mobile app
 - **Embed SDK** for websites; WebView instructions for Flutter / Android / iOS
 
@@ -33,8 +33,8 @@ The license key never reaches a player. They only ever see the temporary session
 
 | Folder | What |
 |---|---|
-| `cocos/` | The Cocos Creator project. `assets/scripts/core` is the reusable game library (art, sound, particles, UI kit, API client); `assets/scripts/games` holds the three games |
-| `server/` | Backend (Fastify + SQLite) and everything it serves: `public/games` (game builds), `public/app` (dashboard build), `public/sdk`, `public/docs` |
+| `cocos/` | The Cocos Creator project. `assets/scripts/core` is the reusable game library (dynamic media loader, sound, particles, UI kit, API client); `assets/scripts/games` holds the game |
+| `server/` | Backend (Fastify + SQLite) and everything it serves: `public/games` (game build), `public/defaults` (default artwork), `public/app` (dashboard build), `public/sdk`, `public/docs` |
 | `dashboard/` | Buyer dashboard (React + Vite) |
 | `sdk/` | Web embed script `minigames.js` |
 | `samples/client-website` | A sample "client website" that embeds a game the right way (key stays on its server) |
@@ -53,10 +53,10 @@ npm start              # http://localhost:3000   (API + dashboard + games + docs
 
 Open http://localhost:3000, create an account (you get 10,000 demo credits), buy a game, press **Customize**.
 
-Quick demo data (3 differently customized Lucky Spin copies, a Lucky 77 and a Ludo, with players and rounds):
+Quick demo data (two differently customized copies of Lucky Wheel 77, with players and settled rounds):
 
 ```bash
-npm run seed           # prints the buyer login and every license key / play link
+npm run seed           # prints the buyer login and every license key / play link (takes about a minute: it plays real rounds)
 ```
 
 Try the sample client website with one of those keys:
@@ -79,17 +79,18 @@ Set `COCOS_CREATOR_DIR` if Creator is not at `C:\ProgramData\cocos\editors\Creat
 ### Tests
 
 ```bash
-npm test                                   # server API flow, payout simulations, Ludo rules (9 tests)
-node scripts/e2e-spin.mjs  <host> <key>    # headless-browser play-throughs that write screenshots to tmp/
-node scripts/e2e-slots.mjs <host> <key>
-node scripts/e2e-ludo.mjs  <host> <key>
-node scripts/e2e-images.mjs                # custom image uploads end to end
+npm test                                       # server: round flow + payout math, odds simulation, isolation, validation, uploads
+node scripts/e2e-wheel.mjs   <host> <key>      # headless-browser play-through, screenshots in tmp/
+node scripts/e2e-popups.mjs  <host> <key>      # every popup
+node scripts/e2e-media.mjs   <host> <email> <password> <licenseId> <key>   # video / SVG / sprite sheet / audio end to end
+node scripts/e2e-full.mjs    <host>            # signup -> buy x2 -> customize -> two client sites -> live round -> dashboard
+node scripts/e2e-dashboard.mjs <host> <email> <password> <licenseId>      # screenshots of every dashboard screen
 ```
 
 ## Adding a new game
 
-1. **Cocos**: add `cocos/assets/scripts/games/MyGame.ts` (extend `Game`, use `ctx.stage`, `ctx.cfg`, `ctx.api`, `ctx.hud`, `ctx.fx`) and register its slug in `games/index.ts`.
-2. **Server**: add an entry to `server/src/catalog.ts` (slug, price, defaults, and a **manifest** that describes the editable fields) and, if the game needs server-side logic, an engine in `server/src/engine/` plus a route in `app.ts`.
+1. **Cocos**: add `cocos/assets/scripts/games/MyGame.ts` (extend `Game`; use `ctx.stage`, `ctx.cfg`, `ctx.api`, `ctx.hud`, `ctx.fx` and `spawnMedia()` for every asset) and register its slug in `games/index.ts`.
+2. **Server**: add an entry to `server/src/catalog.ts` (slug, price, defaults, and a **manifest** listing the editable fields; asset fields declare their kind) and, if the game needs server-side logic, a module like `server/src/wheel.ts` plus routes in `app.ts`.
 3. `npm run build:games`. The dashboard form for the new game appears automatically from the manifest.
 
 ## Configuration
@@ -104,5 +105,5 @@ node scripts/e2e-images.mjs                # custom image uploads end to end
 ## Known limits of this demo (by design)
 
 - Wallet currency is demo credits; there is no payment provider.
-- Ludo results are resolved client-side (see `docs/GAMES.md`); Lucky Spin and Lucky 77 are fully server-authoritative.
+- Wheel art must have the same number of wedges as the wheel layout in the rules.
 - SQLite is perfect for a demo and small deployments; use Postgres if you expect heavy concurrent load.

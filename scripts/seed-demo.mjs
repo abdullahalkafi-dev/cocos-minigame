@@ -1,5 +1,6 @@
-// Creates a demo buyer with 3 differently-customized copies of the SAME game + some players/rounds,
-// by calling the real HTTP API. Usage: node scripts/seed-demo.mjs [http://localhost:3000]
+// Creates a demo buyer with two differently customized copies of Lucky Wheel 77, plus some players with real bets,
+// by calling the real HTTP API.  Usage: node scripts/seed-demo.mjs [http://localhost:3000]
+// (Do NOT run this against production: it creates a demo account.)
 const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '');
 const email = `demo+${Date.now().toString(36)}@minigame.studio`;
 const password = 'demo-' + crypto.randomUUID().slice(0, 13);
@@ -10,40 +11,38 @@ async function call(method, url, token, body) {
   if (!r.ok) throw new Error(`${method} ${url} -> ${r.status} ${j.error}`);
   return j;
 }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const reg = await call('POST', '/api/auth/register', null, { email, password });
-const T = reg.token;
-await call('POST', '/api/wallet/topup', T); await call('POST', '/api/wallet/topup', T);
+const T = (await call('POST', '/api/auth/register', null, { email, password })).token;
+await call('POST', '/api/wallet/topup', T);
 const looks = [
-  { title: 'Neon Wheel', currencyName: 'Gems', startingBalance: 500, betOptions: [5, 25, 50], 'theme.primary': '#06b6d4', 'theme.secondary': '#f472b6', 'theme.background': '#04122b' },
-  { title: 'Gold Rush Spin', currencyName: 'Gold', startingBalance: 2000, betOptions: [50, 200, 500], 'theme.primary': '#b45309', 'theme.secondary': '#fde047', 'theme.background': '#1c1203' },
-  { title: 'Candy Spin', currencyName: 'Candies', startingBalance: 100, betOptions: [1, 5, 10], 'theme.primary': '#ec4899', 'theme.secondary': '#a3e635', 'theme.background': '#3b0764' },
+  { title: 'Lucky Wheel 77', currencyName: 'Coins' },
+  { title: 'Royal Wheel', currencyName: 'Gems', startingBalance: 250000, 'theme.secondary': '#22d3ee', 'theme.accent': '#22d3ee', 'theme.popup': '#0b2a4a',
+    'texts.placeBets': 'Choose your fruit', 'timing.betSeconds': 14, 'timing.spinSeconds': 5, 'timing.resultSeconds': 5 },
 ];
 const out = [];
 for (const look of looks) {
-  const b = await call('POST', '/api/store/lucky-spin/buy', T);
-  await call('PUT', `/api/licenses/${b.license.id}/config`, T, { config: look });
-  const s = await call('POST', '/api/v1/sessions', b.licenseKey, {});
-  out.push({ name: look.title, licenseId: b.license.id, licenseKey: b.licenseKey, playUrl: s.playUrl });
-  // a few players with rounds so the dashboard has data
-  for (const u of ['ali_khan', 'sara_m', 'tom99']) {
-    const s2 = await call('POST', '/api/v1/sessions', b.licenseKey, { username: u });
-    const boot = await call('GET', '/api/play/bootstrap', s2.sessionToken);
-    for (let i = 0; i < 6 + Math.floor(Math.random() * 8); i++) {
-      try { await call('POST', '/api/play/spin', boot.token, { bet: look.betOptions[0] }); } catch {}
-    }
-  }
+  const b = await call('POST', '/api/store/lucky-wheel/buy', T);
+  if (Object.keys(look).length > 2) await call('PUT', `/api/licenses/${b.license.id}/config`, T, { config: look });
+  const sess = await call('POST', '/api/v1/sessions', b.licenseKey, {});
+  out.push({ name: look.title, licenseId: b.license.id, licenseKey: b.licenseKey, playUrl: sess.playUrl });
 }
-// other games, each with its own look
-const others = [
-  { slug: 'lucky-77', look: { title: 'Royal 77', currencyName: 'Chips', startingBalance: 3000, betOptions: [10, 50, 100, 500] } },
-  { slug: 'ludo', look: { title: 'Ludo Royale', currencyName: 'Coins', startingBalance: 1000, entryFee: 100 } },
-];
-for (const o of others) {
-  await call('POST', '/api/wallet/topup', T);
-  const b = await call('POST', `/api/store/${o.slug}/buy`, T);
-  await call('PUT', `/api/licenses/${b.license.id}/config`, T, { config: o.look });
-  const s = await call('POST', '/api/v1/sessions', b.licenseKey, {});
-  out.push({ name: o.look.title, game: o.slug, licenseId: b.license.id, licenseKey: b.licenseKey, playUrl: s.playUrl });
+// players with real bets on the first copy
+const lic = out[0];
+const players = [];
+for (const u of ['ali_khan', 'sara_m', 'tom99']) {
+  const s = await call('POST', '/api/v1/sessions', lic.licenseKey, { username: u });
+  const boot = await call('GET', '/api/play/bootstrap', s.sessionToken);
+  players.push(boot.token);
+}
+for (let round = 0; round < 2; round++) {
+  const st = await call('GET', '/api/play/wheel/state', players[0]);
+  const wait = st.round.betEnd - st.serverTime;
+  if (wait < 4000) { await sleep(st.round.endAt - st.serverTime + 500); round--; continue; }
+  for (const [i, tok] of players.entries()) {
+    const targets = ['watermelon', 'seven', 'plum'];
+    await call('POST', '/api/play/wheel/bet', tok, { bets: [{ target: targets[(i + round) % 3], amount: [30000, 300000, 1000000][i] }, { target: targets[(i + round + 1) % 3], amount: 30000 }] });
+  }
+  await sleep(st.round.endAt - st.serverTime + 800);
 }
 console.log(JSON.stringify({ base: BASE, buyerEmail: email, buyerPassword: password, games: out }, null, 2));

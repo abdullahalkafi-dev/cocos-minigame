@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, setToken } from '../api';
 import { useApp } from '../App';
+import { Button, Icon } from '../ui';
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [email, setEmail] = useState('');
@@ -13,34 +14,33 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setErr(''); setBusy(true);
-    try {
-      const r = await api.post(`/api/auth/${mode}`, { email, password });
-      setToken(r.token); await refresh(); nav('/');
-    } catch (x: any) { setErr(x.message); }
+    try { const r = await api.post(`/api/auth/${mode}`, { email, password }); setToken(r.token); await refresh(); nav('/'); }
+    catch (x: any) { setErr(x.message); }
     setBusy(false);
   };
 
   return (
     <div className="auth">
       <div className="auth-hero">
-        <div className="logo big">♦</div>
-        <h1>MiniGame Studio</h1>
-        <p>Buy ready-made, animated mini games. Make them yours with your own images, prizes and currency. Drop them into any website or app with one license key.</p>
-        <ul>
-          <li>🎡 Lucky Spin &nbsp; 🎰 Lucky 77 &nbsp; 🎲 Ludo</li>
-          <li>🔑 Secret license key, safe server-to-server sessions</li>
-          <li>📊 See your players and their results live</li>
-        </ul>
+        <div className="brand" style={{ padding: 0, color: '#fff' }}><span className="logo"><Icon name="sparkle" size={18} /></span>MiniGame Studio</div>
+        <h1>Ship a polished mini game in minutes.</h1>
+        <p>Buy a ready-made, animated game, replace every image, video and sound with your own, and drop it into any website or app with one secret key.</p>
+        <div className="feat">
+          <div><span className="ic"><Icon name="palette" size={15} /></span>Every asset is a slot: image, SVG, video, sound</div>
+          <div><span className="ic"><Icon name="key" size={15} /></span>Secret license key, safe server-to-server sessions</div>
+          <div><span className="ic"><Icon name="chart" size={15} /></span>Live players, bets and results dashboard</div>
+        </div>
+        <img className="wheel" src="/defaults/lucky-wheel/wheel-frame.webp" alt="" />
       </div>
       <form className="card auth-card" onSubmit={submit}>
-        <h2>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
-        {mode === 'register' && <p className="muted">You start with <b>10,000 demo credits</b> to buy games.</p>}
-        <label>Email<input type="email" required autoFocus value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" /></label>
-        <label>Password<input type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" /></label>
-        {err && <div className="error">{err}</div>}
-        <button className="btn primary" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
-        <p className="muted center-text">
-          {mode === 'login' ? <>New here? <Link to="/register">Create an account</Link></> : <>Already have an account? <Link to="/login">Sign in</Link></>}
+        <div><h2>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
+          <p className="muted" style={{ marginTop: 4 }}>{mode === 'register' ? <>You start with <b>10,000 demo credits</b> to buy games.</> : 'Sign in to manage your games.'}</p></div>
+        <div><label className="lbl">Email</label><input type="email" required autoFocus value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" /></div>
+        <div><label className="lbl">Password</label><input type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" /></div>
+        {err && <div className="badge bad" style={{ padding: '10px 12px', borderRadius: 10, whiteSpace: 'normal' }}>{err}</div>}
+        <Button variant="primary" size="lg" loading={busy}>{mode === 'login' ? 'Sign in' : 'Create account'}</Button>
+        <p className="muted small" style={{ textAlign: 'center' }}>
+          {mode === 'login' ? <>New here? <Link to="/register">Create an account</Link></> : <>Already registered? <Link to="/login">Sign in</Link></>}
         </p>
       </form>
     </div>

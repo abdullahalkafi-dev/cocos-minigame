@@ -24,6 +24,7 @@ class SfxImpl {
         for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       }
       if (this.ctx!.state === 'suspended') this.ctx!.resume();
+      void this.afterUnlock();
     } catch { /* ignore */ }
   }
   setMuted(m: boolean) {
@@ -60,6 +61,54 @@ class SfxImpl {
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     s.connect(f); f.connect(g); g.connect(this.master);
     s.start(t0); s.stop(t0 + dur + 0.05);
+  }
+
+  // ---- buyer-supplied sounds (asset slots). Anything not supplied falls back to the synthesized sound. ----
+  private custom = new Map<string, AudioBuffer>();
+  private pending = new Map<string, string>();
+  private music: { url: string; src?: AudioBufferSourceNode; gain?: GainNode } | null = null;
+  /** Register a sound for a name; decoded as soon as the audio engine is unlocked. */
+  setCustom(name: string, url: string) { if (url) { this.pending.set(name, url); void this.decodePending(); } }
+  private async decodeBuffer(url: string): Promise<AudioBuffer | null> {
+    try {
+      if (!this.ctx) return null;
+      const r = await fetch(url, { mode: 'cors' });
+      return await this.ctx.decodeAudioData(await r.arrayBuffer());
+    } catch { return null; }
+  }
+  private async decodePending() {
+    if (!this.ctx) return;
+    for (const [name, url] of Array.from(this.pending)) {
+      this.pending.delete(name);
+      const b = await this.decodeBuffer(url);
+      if (b) this.custom.set(name, b);
+    }
+  }
+  /** Play the buyer's sound for  if there is one. Returns false when the synthesized fallback should be used. */
+  playCustom(name: string, vol = 1): boolean {
+    const b = this.custom.get(name);
+    if (!b || !this.ctx || !this.master || this.muted) return !!b;
+    const s = this.ctx.createBufferSource(); s.buffer = b;
+    const g = this.ctx.createGain(); g.gain.value = vol;
+    s.connect(g); g.connect(this.master); s.start();
+    return true;
+  }
+  async startMusic(url: string, vol = 0.35) {
+    if (!url) return;
+    this.music = { url };
+    if (!this.ctx) return;
+    const b = await this.decodeBuffer(url);
+    if (!b || !this.ctx || !this.master || this.music?.url !== url) return;
+    this.music.src?.stop();
+    const s = this.ctx.createBufferSource(); s.buffer = b; s.loop = true;
+    const g = this.ctx.createGain(); g.gain.value = vol;
+    s.connect(g); g.connect(this.master); s.start();
+    this.music = { url, src: s, gain: g };
+  }
+  /** Called after the first user gesture: decode what was queued and start the music. */
+  async afterUnlock() {
+    await this.decodePending();
+    if (this.music && !this.music.src) void this.startMusic(this.music.url);
   }
 
   click() { this.tone(520, 0.07, 'triangle', 0.12); this.tone(780, 0.06, 'triangle', 0.08, 0.04); }

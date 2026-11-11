@@ -21,6 +21,7 @@ const app = await buildApp({
   webRoot: path.join(root, 'public/app'),
   sdkDir: path.join(root, 'public/sdk'),
   docsDir: path.join(root, 'public/docs'),
+  defaultsDir: path.join(root, 'public/defaults'),
   logger: true,
 });
 await app.listen({ port, host: '0.0.0.0' });

@@ -7,15 +7,13 @@ import rateLimit from '@fastify/rate-limit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Db, tx } from './db.js';
-import { GAMES, gameBySlug, sanitizeConfig, GameDef } from './catalog.js';
+import { GAMES, gameBySlug, sanitizeConfig, fillAssetDefaults } from './catalog.js';
+import { wheelState, placeBets, myBets, ranking, settleDue } from './wheel.js';
 import { checkPassword, deepMerge, hashPassword, rid, sha256, sign, verify } from './util.js';
-import { playSpin } from './engine/spin.js';
-import { playSlots } from './engine/slots.js';
-import { ludoPayout } from './engine/ludo.js';
 
 export interface AppOpts {
   db: Db; secret: string; publicUrl: string; uploadsDir: string;
-  gamesDir?: string; webRoot?: string; sdkDir?: string; docsDir?: string; logger?: boolean;
+  gamesDir?: string; webRoot?: string; sdkDir?: string; docsDir?: string; defaultsDir?: string; logger?: boolean;
 }
 
 const SIGNUP_CREDITS = 10_000;
@@ -37,14 +35,17 @@ export async function buildApp(o: AppOpts) {
   await app.register(cors, { origin: true, allowedHeaders: ['Authorization', 'Content-Type'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
   await app.register(compress, { global: true, threshold: 1024, encodings: ['br', 'gzip'] });
   await app.register(rateLimit, { global: false });
-  await app.register(multipart, { limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
+  await app.register(multipart, { limits: { fileSize: 12 * 1024 * 1024, files: 1 } });
   fs.mkdirSync(o.uploadsDir, { recursive: true });
 
   app.addHook('onSend', async (req, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     const u = req.url;
-    if (u.startsWith('/uploads/')) reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
+    if (u.startsWith('/uploads/')) {
+      reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
+      reply.header('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox");
+    }
     // the dashboard and API must never be framed by other sites; games (/g/) and the SDK are meant to be embedded
     if (!/^\/(g|sdk|uploads)\//.test(u)) reply.header('X-Frame-Options', 'SAMEORIGIN');
   });
@@ -63,25 +64,29 @@ export async function buildApp(o: AppOpts) {
 
   // ---------- helpers ----------
   const resolveConfig = (lic: Row) => {
-    const def = gameBySlug(lic.game_slug)!;
-    return deepMerge(def.defaults, JSON.parse(lic.config || '{}'));
+    const def = gameBySlug(lic.game_slug);
+    if (!def) return {};
+    return fillAssetDefaults(def, deepMerge(def.defaults, JSON.parse(lic.config || '{}')));
   };
   const absUrl = (u: string) => (u && u.startsWith('/') ? o.publicUrl + u : u);
-  /** Config sent to the game: odds/weights stripped, image paths made absolute. */
+  /** Config sent to the game: odds/weights stripped, every asset url made absolute. */
   const publicConfig = (lic: Row) => {
     const cfg: any = JSON.parse(JSON.stringify(resolveConfig(lic)));
-    if (cfg.images) for (const k of Object.keys(cfg.images)) cfg.images[k] = absUrl(cfg.images[k]);
-    for (const listKey of ['prizes', 'symbols']) {
-      if (Array.isArray(cfg[listKey])) cfg[listKey] = cfg[listKey].map((it: any) => {
-        const { weight, ...rest } = it; rest.image = absUrl(rest.image || ''); return rest;
-      });
-    }
+    const walk = (n: any) => {
+      if (Array.isArray(n)) n.forEach(walk);
+      else if (n && typeof n === 'object') for (const k of Object.keys(n)) {
+        if (k === 'url' && typeof n[k] === 'string') n[k] = absUrl(n[k]); else walk(n[k]);
+      }
+    };
+    walk(cfg);
+    if (Array.isArray(cfg.segments)) cfg.segments = cfg.segments.map((x: any) => ({ target: x.target }));
     return cfg;
   };
   const userView = (u: Row) => ({ id: u.id, email: u.email, balance: u.balance });
   const licenseView = (l: Row) => ({
     id: l.id, name: l.name, game: l.game_slug, keyPrefix: l.key_prefix, status: l.status,
     allowedOrigins: l.allowed_origins ? l.allowed_origins.split(',') : [], createdAt: l.created_at, price: l.price,
+    retired: !gameBySlug(l.game_slug),
   });
   const playerView = (p: Row) => ({ id: p.id, username: p.username, balance: p.balance });
   const newKey = () => 'mgk_' + rid('', 32);
@@ -173,7 +178,8 @@ export async function buildApp(o: AppOpts) {
   });
   app.get('/api/licenses/:id', async (req, reply) => {
     const c = ownLicense(req, reply); if (!c) return;
-    const def = gameBySlug(c.lic.game_slug)!;
+    const def = gameBySlug(c.lic.game_slug);
+    if (!def) return fail(reply, 410, 'This game has been retired');
     return {
       license: licenseView(c.lic), game: { slug: def.slug, name: def.name, manifest: def.manifest, tech: def.tech },
       config: resolveConfig(c.lic), defaults: def.defaults, publicUrl: o.publicUrl,
@@ -181,11 +187,14 @@ export async function buildApp(o: AppOpts) {
   });
   app.put('/api/licenses/:id/config', async (req, reply) => {
     const c = ownLicense(req, reply); if (!c) return;
-    const def = gameBySlug(c.lic.game_slug)!;
+    const def = gameBySlug(c.lic.game_slug);
+    if (!def) return fail(reply, 410, 'This game has been retired');
     const r = sanitizeConfig(def, (req.body as any)?.config);
     if (!r.ok) return fail(reply, 400, r.error);
     // merge into what the buyer already customised, so partial updates never wipe other settings
     const merged = JSON.stringify(deepMerge(JSON.parse(c.lic.config || '{}'), r.config));
+    const problem = def.validate?.(fillAssetDefaults(def, deepMerge(def.defaults, JSON.parse(merged))));
+    if (problem) return fail(reply, 400, problem);
     q.run('UPDATE licenses SET config = ? WHERE id = ?', merged, c.lic.id);
     return { config: resolveConfig({ ...c.lic, config: merged }) };
   });
@@ -216,17 +225,25 @@ export async function buildApp(o: AppOpts) {
   });
   app.post('/api/licenses/:id/upload', async (req, reply) => {
     const c = ownLicense(req, reply); if (!c) return;
+    const kind = String((req.query as any).kind || 'image') as 'image' | 'video' | 'audio' | 'media';
     const file = await req.file();
     if (!file) return fail(reply, 400, 'No file');
     const buf = await file.toBuffer();
-    if (file.file.truncated) return fail(reply, 413, 'Image is larger than 2 MB');
-    const ext = sniffImage(buf);
-    if (!ext) return fail(reply, 400, 'Only PNG, JPG, WebP or GIF images are allowed');
+    if (file.file.truncated) return fail(reply, 413, 'File is too large (max 12 MB)');
+    const m = sniffMedia(buf);
+    if (!m) return fail(reply, 400, 'Unsupported file. Use PNG, JPG, WebP, GIF, SVG, MP4, WebM, MP3, OGG, WAV or M4A.');
+    const allowed: Record<string, string[]> = { image: ['image', 'svg'], video: ['video'], audio: ['audio'], media: ['image', 'svg', 'video'] };
+    if (!(allowed[kind] || allowed.image).includes(m.type)) return fail(reply, 400, `This slot needs ${kind === 'media' ? 'an image, SVG or video' : kind === 'image' ? 'an image or SVG' : kind}, but the file is ${m.type}`);
+    if (m.type === 'svg' && !svgIsSafe(buf.toString('utf8'))) return fail(reply, 400, 'This SVG contains scripts or external references and was rejected');
+    const limit = UPLOAD_LIMITS[m.type];
+    if (buf.length > limit) return fail(reply, 413, `${m.type.toUpperCase()} files can be at most ${Math.round(limit / 1024 / 1024 * 10) / 10} MB`);
     const dir = path.join(o.uploadsDir, c.lic.id);
     fs.mkdirSync(dir, { recursive: true });
-    const name = `${rid('', 8)}.${ext}`;
+    const used = fs.readdirSync(dir).reduce((a, f) => a + fs.statSync(path.join(dir, f)).size, 0);
+    if (used + buf.length > 150 * 1024 * 1024) return fail(reply, 413, 'Storage limit for this game reached (150 MB)');
+    const name = `${rid('', 8)}.${m.ext}`;
     fs.writeFileSync(path.join(dir, name), buf);
-    return { url: `/uploads/${c.lic.id}/${name}` };
+    return { url: `/uploads/${c.lic.id}/${name}`, type: m.type, size: buf.length, name: file.filename };
   });
 
   // ---------- buyer: players & results ----------
@@ -282,6 +299,7 @@ export async function buildApp(o: AppOpts) {
     const lic = key ? q.get('SELECT * FROM licenses WHERE key_hash = ?', sha256(key)) : undefined;
     if (!lic) return fail(reply, 401, 'Invalid license key');
     if (lic.status !== 'active') return fail(reply, 403, 'License is not active');
+    if (!gameBySlug(lic.game_slug)) return fail(reply, 410, 'This game has been retired');
     const { username } = (req.body ?? {}) as any;
     if (username !== undefined && (typeof username !== 'string' || !USERNAME_RE.test(username))) return fail(reply, 400, 'username must be 3-20 chars: letters, numbers, _ . -');
     const token = sign({ t: 's', lic: lic.id, ...(username ? { u: username } : {}) }, secret, SESSION_TTL);
@@ -341,82 +359,40 @@ export async function buildApp(o: AppOpts) {
   });
   app.post('/api/play/refill', async (req, reply) => {
     const c = playerCtx(req, reply); if (!c) return;
-    const bets: number[] = c.cfg.betOptions ?? [c.cfg.entryFee ?? 1];
-    if (c.p.balance >= Math.min(...bets)) return fail(reply, 400, 'You still have enough balance to play');
+    const min = Math.min(...((c.cfg.chips as any[]) || [{ value: 1 }]).map(x => x.value));
+    if (c.p.balance >= min) return fail(reply, 400, 'You still have enough balance to play');
     q.run('UPDATE players SET balance = ? WHERE id = ?', Number(c.cfg.startingBalance) || 0, c.p.id);
     return { balance: Number(c.cfg.startingBalance) || 0 };
   });
 
-  const recordRound = (lic: Row, p: Row, bet: number, win: number, outcome: any, status = 'done') => {
-    const id = rid('rnd_', 8);
-    q.run('INSERT INTO rounds (id,license_id,player_id,game_slug,bet,win,status,outcome,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-      id, lic.id, p.id, lic.game_slug, bet, win, status, JSON.stringify(outcome), now());
-    return id;
-  };
-
-  const betGame = (game: 'lucky-spin' | 'lucky-77') => async (req: FastifyRequest, reply: FastifyReply) => {
-    const c = playerCtx(req, reply, game); if (!c) return;
-    const bet = Number(((req.body ?? {}) as any).bet);
-    if (!Number.isInteger(bet) || !(c.cfg.betOptions as number[]).includes(bet)) return fail(reply, 400, 'Invalid bet');
-    let out: any;
-    try {
-      out = tx(db, () => {
-        const fresh = q.get('SELECT * FROM players WHERE id = ?', c.p.id)!;
-        if (fresh.balance < bet) throw new Error('BALANCE');
-        let result: any, summary: string;
-        if (game === 'lucky-spin') {
-          result = playSpin(c.cfg.prizes, bet);
-          summary = `Landed on "${result.label}"`;
-        } else {
-          result = playSlots(c.cfg.symbols, bet);
-          const names = result.lines.map((l: any) => c.cfg.symbols[l.symbol].label);
-          summary = result.lines.length ? `${result.lines.length} line(s): ${names.join(', ')}` : 'No winning line';
-        }
-        const balance = fresh.balance - bet + result.win;
-        q.run('UPDATE players SET balance = ?, last_seen = ? WHERE id = ?', balance, now(), c.p.id);
-        const roundId = recordRound(c.lic, c.p, bet, result.win, { summary, ...result });
-        return { roundId, result, balance };
-      });
-    } catch (e: any) {
-      if (e.message === 'BALANCE') return fail(reply, 402, 'Not enough balance');
-      throw e;
-    }
-    return out;
-  };
-  app.post('/api/play/spin', betGame('lucky-spin'));
-  app.post('/api/play/slots', betGame('lucky-77'));
-
-  // Ludo: match start (entry fee) and finish (placement). Result is reported by the client in this demo.
-  app.post('/api/play/ludo/start', async (req, reply) => {
-    const c = playerCtx(req, reply, 'ludo'); if (!c) return;
-    const fee = Number(c.cfg.entryFee) || 0;
-    try {
-      return tx(db, () => {
-        const fresh = q.get('SELECT * FROM players WHERE id = ?', c.p.id)!;
-        if (fresh.balance < fee) throw new Error('BALANCE');
-        q.run('UPDATE players SET balance = balance - ?, last_seen = ? WHERE id = ?', fee, now(), c.p.id);
-        const matchId = recordRound(c.lic, c.p, fee, 0, { summary: 'Match in progress' }, 'pending');
-        return { matchId, balance: fresh.balance - fee };
-      });
-    } catch (e: any) {
-      if (e.message === 'BALANCE') return fail(reply, 402, 'Not enough balance for the entry fee');
-      throw e;
-    }
+  // ---------- Lucky Wheel (shared round clock) ----------
+  const wheel = (req: FastifyRequest, reply: FastifyReply) => playerCtx(req, reply, 'lucky-wheel');
+  app.get('/api/play/wheel/state', async (req, reply) => {
+    const c = wheel(req, reply); if (!c) return;
+    q.run('UPDATE players SET last_seen = ? WHERE id = ?', now(), c.p.id);
+    return wheelState(db, c.lic.id, c.cfg, c.p, now());
   });
-  app.post('/api/play/ludo/finish', async (req, reply) => {
-    const c = playerCtx(req, reply, 'ludo'); if (!c) return;
-    const { matchId, placement } = (req.body ?? {}) as any;
-    const place = Number(placement);
-    if (!Number.isInteger(place) || place < 1 || place > 4) return fail(reply, 400, 'Invalid placement');
-    return tx(db, () => {
-      const r = q.get('SELECT * FROM rounds WHERE id = ? AND player_id = ? AND status = ?', String(matchId), c.p.id, 'pending');
-      if (!r) throw Object.assign(new Error('Match not found'), { statusCode: 404 });
-      const win = ludoPayout(c.cfg, place);
-      q.run('UPDATE rounds SET status = ?, win = ?, outcome = ? WHERE id = ?', 'done', win, JSON.stringify({ summary: `Finished ${ordinal(place)}`, placement: place }), r.id);
-      q.run('UPDATE players SET balance = balance + ?, last_seen = ? WHERE id = ?', win, now(), c.p.id);
-      return { win, placement: place, balance: q.get('SELECT balance FROM players WHERE id = ?', c.p.id)!.balance };
-    });
+  app.post('/api/play/wheel/bet', { config: { rateLimit: { max: 240, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const c = wheel(req, reply); if (!c) return;
+    const bets = ((req.body ?? {}) as any).bets;
+    if (!Array.isArray(bets) || !bets.length || bets.length > 24) return fail(reply, 400, 'Invalid bets');
+    const list = bets.map((b: any) => ({ target: String(b?.target ?? ''), amount: Number(b?.amount) }));
+    return { ...placeBets(db, c.lic.id, c.cfg, c.p, list, now()) };
   });
+  app.get('/api/play/wheel/mybets', async (req, reply) => {
+    const c = wheel(req, reply); if (!c) return;
+    settleDue(db, c.lic.id, now());
+    return { bets: myBets(db, c.p.id) };
+  });
+  app.get('/api/play/wheel/ranking', async (req, reply) => {
+    const c = wheel(req, reply); if (!c) return;
+    settleDue(db, c.lic.id, now());
+    return ranking(db, c.lic.id, c.p);
+  });
+  // settle finished rounds even when nobody is polling, so dashboards and balances stay current
+  const settleTimer = setInterval(() => { try { settleDue(db, null, Date.now()); } catch { /* keep running */ } }, 2000);
+  settleTimer.unref();
+  app.addHook('onClose', async () => clearInterval(settleTimer));
 
   // ---------- static: uploads, game builds (with frame-ancestors), sdk, dashboard ----------
   app.addHook('onRequest', async (req, reply) => {
@@ -430,6 +406,7 @@ export async function buildApp(o: AppOpts) {
   await app.register(fstatic, { root: path.resolve(o.uploadsDir), prefix: '/uploads/', decorateReply: false, maxAge: '1h' });
   if (o.gamesDir && fs.existsSync(o.gamesDir)) await app.register(fstatic, { root: path.resolve(o.gamesDir), prefix: '/g/', decorateReply: false, cacheControl: false, setHeaders: res => res.setHeader('Cache-Control', 'no-cache') });
   if (o.sdkDir && fs.existsSync(o.sdkDir)) await app.register(fstatic, { root: path.resolve(o.sdkDir), prefix: '/sdk/', decorateReply: false, cacheControl: false, setHeaders: res => res.setHeader('Cache-Control', 'no-cache') });
+  if (o.defaultsDir && fs.existsSync(o.defaultsDir)) await app.register(fstatic, { root: path.resolve(o.defaultsDir), prefix: '/defaults/', decorateReply: false, maxAge: '7d', immutable: false });
   if (o.docsDir && fs.existsSync(o.docsDir)) await app.register(fstatic, { root: path.resolve(o.docsDir), prefix: '/docs/', decorateReply: false, cacheControl: false, setHeaders: res => res.setHeader('Cache-Control', 'no-cache') });
   if (o.webRoot && fs.existsSync(o.webRoot)) {
     await app.register(fstatic, { root: path.resolve(o.webRoot), prefix: '/', decorateReply: true, wildcard: false });
@@ -447,10 +424,32 @@ export async function buildApp(o: AppOpts) {
   return app;
 }
 
-function sniffImage(b: Buffer): string | null {
-  if (b.length > 12 && b[0] === 0x89 && b.toString('latin1', 1, 4) === 'PNG') return 'png';
-  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
-  if (b.length > 6 && b.toString('latin1', 0, 4) === 'GIF8') return 'gif';
-  if (b.length > 12 && b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') return 'webp';
+const UPLOAD_LIMITS: Record<string, number> = { image: 3 * 1024 * 1024, svg: 300 * 1024, video: 10 * 1024 * 1024, audio: 4 * 1024 * 1024 };
+
+/** Identify an upload by its file signature (never by its name or declared type). */
+function sniffMedia(b: Buffer): { type: 'image' | 'svg' | 'video' | 'audio'; ext: string } | null {
+  if (b.length < 12) return null;
+  if (b[0] === 0x89 && b.toString('latin1', 1, 4) === 'PNG') return { type: 'image', ext: 'png' };
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return { type: 'image', ext: 'jpg' };
+  if (b.toString('latin1', 0, 4) === 'GIF8') return { type: 'image', ext: 'gif' };
+  if (b.toString('latin1', 0, 4) === 'RIFF') {
+    const k = b.toString('latin1', 8, 12);
+    if (k === 'WEBP') return { type: 'image', ext: 'webp' };
+    if (k === 'WAVE') return { type: 'audio', ext: 'wav' };
+  }
+  if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return { type: 'video', ext: 'webm' };
+  if (b.toString('latin1', 4, 8) === 'ftyp') { const brand = b.toString('latin1', 8, 12); return brand === 'M4A ' || brand === 'M4B ' ? { type: 'audio', ext: 'm4a' } : { type: 'video', ext: 'mp4' }; }
+  if (b.toString('latin1', 0, 4) === 'OggS') return { type: 'audio', ext: 'ogg' };
+  if (b.toString('latin1', 0, 3) === 'ID3' || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0)) return { type: 'audio', ext: 'mp3' };
+  const head = b.toString('utf8', 0, 600).trimStart().toLowerCase();
+  if (head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg'))) return { type: 'svg', ext: 'svg' };
   return null;
+}
+/** SVGs are rejected (not "cleaned") when they could run code or load anything from outside. */
+export function svgIsSafe(t: string): boolean {
+  if (/<script|<foreignobject|<iframe|<embed|<object|<audio|<video|<!entity|<!doctype[^>]*\[|@import|javascript:|vbscript:/i.test(t)) return false;
+  if (/\son[a-z]+\s*=/i.test(t)) return false;
+  if (/(?:xlink:)?href\s*=\s*["']\s*(?!#|data:image\/(?:png|jpe?g|webp|gif);base64,)/i.test(t)) return false;
+  if (/url\(\s*["']?\s*(?:https?:|\/\/|javascript:)/i.test(t)) return false;
+  return true;
 }

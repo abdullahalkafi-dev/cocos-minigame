@@ -1,21 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, copy, fmt } from '../api';
-import { Modal, useApp } from '../App';
-
-const ART: Record<string, { emoji: string; grad: string }> = {
-  'lucky-spin': { emoji: '🎡', grad: 'linear-gradient(135deg,#7c3aed,#f59e0b)' },
-  'lucky-77': { emoji: '🎰', grad: 'linear-gradient(135deg,#dc2626,#fbbf24)' },
-  ludo: { emoji: '🎲', grad: 'linear-gradient(135deg,#2563eb,#22c55e)' },
-};
+import { useApp } from '../App';
+import { Badge, Button, Card, Icon, Modal, PageHead, Skeleton } from '../ui';
 
 export default function Store() {
-  const [games, setGames] = useState<any[]>([]);
+  const [games, setGames] = useState<any[] | null>(null);
   const [busy, setBusy] = useState('');
   const [bought, setBought] = useState<any>(null);
   const { user, refresh, toast } = useApp();
   const nav = useNavigate();
-
   useEffect(() => { api.get('/api/store').then(r => setGames(r.games)); }, []);
 
   const buy = async (g: any) => {
@@ -26,39 +20,35 @@ export default function Store() {
   };
 
   return (
-    <>
-      <div className="page-head">
-        <div><h1>Game store</h1><p className="muted">Pay with demo credits. Every purchase gives you its own secret license key and its own customizable copy.</p></div>
-      </div>
-      <div className="grid cards">
-        {games.map(g => (
-          <div className="card game-card" key={g.slug}>
-            <div className="art" style={{ background: ART[g.slug]?.grad }}><span>{ART[g.slug]?.emoji}</span></div>
-            <div className="body">
-              <h3>{g.name}</h3>
-              <p className="muted">{g.tagline}</p>
-              <ul className="tech">{g.tech.map((t: string) => <li key={t}>{t}</li>)}</ul>
-              <div className="row between">
-                <div className="price"><span className="coin">●</span> {fmt(g.price)}</div>
-                <button className="btn primary" disabled={busy === g.slug || user.balance < g.price} onClick={() => buy(g)}>
-                  {user.balance < g.price ? 'Not enough credits' : busy === g.slug ? 'Buying…' : 'Buy game'}
-                </button>
-              </div>
+    <div className="stack">
+      <PageHead title="Game store" sub="Each purchase gives you its own secret license key and its own fully customizable copy." />
+      {games === null ? <Card><Skeleton h={300} /></Card> : games.map(g => (
+        <Card key={g.slug} className="hero-card">
+          <div className="hero-art"><div className="phone-mock"><img src="/defaults/lucky-wheel/preview.webp" alt={g.name} /></div></div>
+          <div className="hero-body">
+            <div className="row"><Badge tone="brand"><Icon name="sparkle" size={12} />Live multiplayer rounds</Badge><Badge tone="good">Ready to embed</Badge></div>
+            <div><h1>{g.name}</h1><p className="muted" style={{ marginTop: 6 }}>{g.tagline}</p></div>
+            <ul className="checks">{g.tech.map((t: string) => <li key={t}><span className="ok"><Icon name="check" size={12} stroke={2.6} /></span><span>{t}</span></li>)}</ul>
+            <div className="row between wrap" style={{ marginTop: 6 }}>
+              <div className="price"><Icon name="coin" size={24} />{fmt(g.price)}<span className="muted small" style={{ fontWeight: 600 }}>demo credits</span></div>
+              <Button variant="primary" size="lg" icon="key" loading={busy === g.slug} disabled={user.balance < g.price} onClick={() => buy(g)}>
+                {user.balance < g.price ? 'Not enough credits' : 'Buy and get my key'}
+              </Button>
             </div>
           </div>
-        ))}
-      </div>
+        </Card>
+      ))}
       {bought && (
-        <Modal title="🎉 Purchase complete" onClose={() => setBought(null)}>
-          <p>Your new game <b>{bought.license.name}</b> is ready. This is your <b>secret license key</b>. <b>Copy it now, it will not be shown again</b> (you can rotate it later).</p>
+        <Modal title="Purchase complete" onClose={() => setBought(null)}>
+          <p>Your game <b>{bought.license.name}</b> is ready. This is your <b>secret license key</b>. Copy it now, it will not be shown again. (You can rotate it later.)</p>
           <div className="secret">{bought.licenseKey}</div>
-          <p className="muted small">Keep it on your server only. Never put it in website JavaScript or inside your mobile app.</p>
+          <p className="muted small">Keep it on your server only. Never place it in website JavaScript or inside a mobile app.</p>
           <div className="row end">
-            <button className="btn" onClick={async () => { await copy(bought.licenseKey); toast('Key copied'); }}>Copy key</button>
-            <button className="btn primary" onClick={() => { const id = bought.license.id; setBought(null); nav(`/games/${id}`); }}>Customize my game →</button>
+            <Button icon="copy" onClick={async () => { await copy(bought.licenseKey); toast('Key copied'); }}>Copy key</Button>
+            <Button variant="primary" icon="palette" onClick={() => { const id = bought.license.id; setBought(null); nav(`/games/${id}`); }}>Customize my game</Button>
           </div>
         </Modal>
       )}
-    </>
+    </div>
   );
 }

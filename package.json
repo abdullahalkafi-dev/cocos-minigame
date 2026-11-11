@@ -15,9 +15,10 @@
     "build:games": "node scripts/build-games.mjs",
     "build:all": "npm run build:games && npm run build",
     "seed": "node scripts/seed-demo.mjs",
-    "test": "npm test -w server && node --import tsx --test cocos/tests/ludoRules.test.ts"
+    "test": "npm test -w server"
   },
   "devDependencies": {
-    "playwright": "^1.65.0"
+    "playwright": "^1.65.0",
+    "sharp": "^0.35.5"
   }
 }

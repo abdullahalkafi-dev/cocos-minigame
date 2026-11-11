@@ -69,7 +69,7 @@ The server trusts `X-Forwarded-*` headers (needed for correct rate limiting behi
 
 ```bash
 curl https://games.example.com/api/health          # {"ok":true,...}
-node scripts/seed-demo.mjs https://games.example.com   # creates a demo buyer and prints keys / play links
+# (do not run the seed script on production; it creates a demo account)
 ```
 
 Open the printed play link in a phone browser, and the dashboard at the root URL.

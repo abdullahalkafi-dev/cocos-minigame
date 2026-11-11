@@ -3,6 +3,14 @@
 export interface Player { id: string; username: string; balance: number }
 export interface Bootstrap { game: string; config: any; player: Player | null; token: string | null }
 
+export interface WheelState {
+  serverTime: number; balance: number;
+  round: { no: number; phase: 'betting' | 'spinning' | 'result'; startAt: number; betEnd: number; spinEnd: number; endAt: number;
+    result: { target: string; segment: number; hits: string[] } | null; summary: { winners: { username: string; bet: number; win: number }[]; my: { bet: number; win: number } } | null };
+  timing: { betSeconds: number; spinSeconds: number; resultSeconds: number };
+  pot: Record<string, number>; mine: Record<string, number>; history: { no: number; hits: string[] }[];
+}
+
 export class ApiError extends Error {
   constructor(public status: number, msg: string) { super(msg); }
 }
@@ -46,12 +54,10 @@ export class Api {
     this.token = r.token;
     return r.player;
   }
-  spin(bet: number) { return this.req<{ roundId: string; result: any; balance: number }>('POST', '/api/play/spin', { bet }); }
-  slots(bet: number) { return this.req<{ roundId: string; result: any; balance: number }>('POST', '/api/play/slots', { bet }); }
-  ludoStart() { return this.req<{ matchId: string; balance: number }>('POST', '/api/play/ludo/start', {}); }
-  ludoFinish(matchId: string, placement: number) {
-    return this.req<{ win: number; placement: number; balance: number }>('POST', '/api/play/ludo/finish', { matchId, placement });
-  }
+  wheelState() { return this.req<WheelState>('GET', '/api/play/wheel/state'); }
+  wheelBet(bets: { target: string; amount: number }[]) { return this.req<{ balance: number; round: number }>('POST', '/api/play/wheel/bet', { bets }); }
+  wheelMyBets() { return this.req<{ bets: { no: number; time: number; target: string; label: string; amount: number; win: number }[] }>('GET', '/api/play/wheel/mybets'); }
+  wheelRanking() { return this.req<{ list: { rank: number; username: string; win: number; me: boolean }[]; me: { rank: number | null; username: string; win: number } }>('GET', '/api/play/wheel/ranking'); }
   refill() { return this.req<{ balance: number }>('POST', '/api/play/refill', {}); }
   leaderboard() { return this.req<{ leaderboard: { username: string; won: number }[] }>('GET', '/api/play/leaderboard'); }
 }

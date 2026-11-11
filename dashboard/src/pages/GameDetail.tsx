@@ -1,166 +1,99 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, NavLink, Navigate, Route, Routes, useParams } from 'react-router-dom';
-import { Snippets } from './Integrate';
-import { api, getPath, setPath } from '../api';
-import { useApp, Modal } from '../App';
-import { FieldInput } from '../components/FieldEditor';
+import { useCallback, useEffect, useState } from 'react';
+import { NavLink, Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { api } from '../api';
+import { useApp } from '../App';
+import { Badge, Button, Card, Empty, Icon, Modal, PageHead, Skeleton } from '../ui';
+import Studio from './Studio';
 import PlayersTab from './Players';
+import { Snippets } from './Integrate';
 
 export default function GameDetail() {
   const { id } = useParams();
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState('');
-  const load = useCallback(async () => {
-    try { setData(await api.get(`/api/licenses/${id}`)); } catch (e: any) { setErr(e.message); }
-  }, [id]);
-  useEffect(() => { setData(null); load(); }, [load]);
+  const load = useCallback(async () => { try { setData(await api.get(`/api/licenses/${id}`)); } catch (e: any) { setErr(e.message); } }, [id]);
+  useEffect(() => { setData(null); setErr(''); load(); }, [load]);
 
-  if (err) return <div className="card empty"><h3>{err}</h3><Link className="btn" to="/games">Back to my games</Link></div>;
-  if (!data) return <div className="muted">Loading…</div>;
+  if (err) return <Card><Empty icon="info" title={err} action={<a href="/games"><Button>Back to my games</Button></a>} /></Card>;
+  if (!data) return <div className="stack"><Skeleton h={34} w={280} /><Skeleton h={420} r={16} /></div>;
   const { license, game } = data;
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <Link to="/games" className="muted small">← My games</Link>
-          <h1>{license.name} <span className="pill">{game.name}</span></h1>
-        </div>
-      </div>
+    <div>
+      <PageHead back={{ to: '/games', label: 'My games' }} title={<>{license.name} <Badge tone="brand">{game.name}</Badge></>} sub={<span className="mono small">{license.keyPrefix}••••••••</span>} />
       <div className="tabs">
-        <NavLink to={`/games/${id}/customize`}>🎨 Customize</NavLink>
-        <NavLink to={`/games/${id}/integrate`}>🔌 Integrate</NavLink>
-        <NavLink to={`/games/${id}/players`}>📊 Players &amp; Results</NavLink>
+        <NavLink to={`/games/${id}/customize`}><Icon name="palette" size={16} />Customize</NavLink>
+        <NavLink to={`/games/${id}/integrate`}><Icon name="plug" size={16} />Integrate</NavLink>
+        <NavLink to={`/games/${id}/players`}><Icon name="chart" size={16} />Players &amp; results</NavLink>
+        <NavLink to={`/games/${id}/settings`}><Icon name="settings" size={16} />Settings</NavLink>
       </div>
       <Routes>
-        <Route path="customize" element={<Customize data={data} />} />
-        <Route path="integrate" element={<Integrate data={data} reload={load} />} />
+        <Route path="customize" element={<Studio data={data} />} />
+        <Route path="integrate" element={<Integrate data={data} />} />
         <Route path="players" element={<PlayersTab data={data} />} />
+        <Route path="settings" element={<Settings data={data} reload={load} />} />
         <Route path="*" element={<Navigate to="customize" replace />} />
       </Routes>
-    </>
-  );
-}
-
-// ---------------- Customize ----------------
-function Customize({ data }: { data: any }) {
-  const { license, game } = data;
-  const { toast } = useApp();
-  const [config, setConfig] = useState<any>(data.config);
-  const [saved, setSaved] = useState(JSON.stringify(data.config));
-  const [busy, setBusy] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState('');
-  const dirty = JSON.stringify(config) !== saved;
-  const frame = useRef<HTMLIFrameElement>(null);
-
-  const loadPreview = useCallback(async () => {
-    const r = await api.post(`/api/licenses/${license.id}/preview-session`);
-    setPreviewUrl(r.playUrl);
-  }, [license.id]);
-  useEffect(() => { loadPreview(); }, [loadPreview]);
-
-  const fields = useMemo(() => game.manifest.flatMap((g: any) => g.fields), [game]);
-  const save = async () => {
-    setBusy(true);
-    try {
-      const flat = Object.fromEntries(fields.map((f: any) => [f.key, getPath(config, f.key)]));
-      const r = await api.put(`/api/licenses/${license.id}/config`, { config: flat });
-      setConfig(r.config); setSaved(JSON.stringify(r.config));
-      toast('Saved. Refreshing preview…'); await loadPreview();
-    } catch (e: any) { toast(e.message, 'err'); }
-    setBusy(false);
-  };
-  const reset = () => { if (confirm('Reset everything to the game defaults?')) setConfig(data.defaults); };
-
-  return (
-    <div className="split">
-      <div className="form-col">
-        {game.manifest.map((g: any) => (
-          <section className="card form-section" key={g.title}>
-            <h3>{g.title}</h3>
-            {g.fields.map((f: any) => (
-              <div className={`field ${f.type === 'list' ? 'wide' : ''}`} key={f.key}>
-                <label>{f.label}</label>
-                {f.help && <div className="help">{f.help}</div>}
-                <FieldInput f={f} licenseId={license.id} value={getPath(config, f.key)} onChange={v => setConfig((c: any) => setPath(c, f.key, v))} />
-              </div>
-            ))}
-          </section>
-        ))}
-        <div className="savebar">
-          <span className={dirty ? 'dirty' : 'muted'}>{dirty ? '● Unsaved changes' : '✓ All changes saved'}</span>
-          <div className="row">
-            <button className="btn ghost" onClick={reset}>Reset to defaults</button>
-            <button className="btn primary" disabled={!dirty || busy} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button>
-          </div>
-        </div>
-      </div>
-      <aside className="preview-col">
-        <div className="phone">
-          {previewUrl ? <iframe ref={frame} src={previewUrl} title="Live preview" allow="autoplay; fullscreen" /> : <div className="center muted">Loading preview…</div>}
-        </div>
-        <div className="row center-row">
-          <button className="btn sm" onClick={loadPreview}>↻ Reload preview</button>
-          <a className="btn sm ghost" href={previewUrl} target="_blank" rel="noreferrer">Open full size ↗</a>
-        </div>
-        <p className="muted small center-text">The preview shows your <b>saved</b> settings. Preview players are not counted in your stats.</p>
-      </aside>
     </div>
   );
 }
 
-// ---------------- Integrate ----------------
-function Integrate({ data, reload }: { data: any; reload: () => void }) {
+function Integrate({ data }: { data: any }) {
+  const { license } = data;
+  const { toast } = useApp();
+  const open = async () => { const r = await api.post(`/api/licenses/${license.id}/preview-session`); window.open(r.playUrl, '_blank'); };
+  return (
+    <div className="stack">
+      <Card>
+        <h2 style={{ marginBottom: 16 }}>How it works</h2>
+        <div className="stack">
+          <div className="step"><div className="n">1</div><div><b>Your server creates a session</b><p className="muted">It calls our API with your secret license key and receives a play link that expires in 15 minutes.</p></div></div>
+          <div className="step"><div className="n">2</div><div><b>Your site or app shows the game</b><p className="muted">Load the link in an iframe (website) or a WebView (Flutter, Android, iOS). The player picks a username and plays.</p></div></div>
+          <div className="step"><div className="n">3</div><div><b>You watch the results</b><p className="muted">Players, bets and payouts appear live under <i>Players &amp; results</i>. The key itself never reaches a player.</p></div></div>
+        </div>
+        <div className="row" style={{ marginTop: 18 }}><Button icon="play" onClick={open}>Try the game in a new tab</Button><a href="/docs/" target="_blank" rel="noreferrer"><Button variant="ghost" icon="book">Full integration guide</Button></a></div>
+      </Card>
+      <Snippets baseUrl={location.origin} />
+      <span className="sr">{String(!!toast)}</span>
+    </div>
+  );
+}
+
+function Settings({ data, reload }: { data: any; reload: () => void }) {
   const { license } = data;
   const { toast } = useApp();
   const [newKey, setNewKey] = useState('');
-  const [origins, setOrigins] = useState((license.allowedOrigins as string[]).join('\n'));
   const [name, setName] = useState(license.name);
+  const [origins, setOrigins] = useState<string[]>(license.allowedOrigins);
+  const [draft, setDraft] = useState('');
 
-  const rotate = async () => {
-    if (!confirm('Rotate the key? Your current key stops working immediately, so update your server right after.')) return;
-    try { setNewKey((await api.post(`/api/licenses/${license.id}/rotate-key`)).licenseKey); reload(); } catch (e: any) { toast(e.message, 'err'); }
-  };
-  const saveMeta = async () => {
-    try {
-      await api.put(`/api/licenses/${license.id}`, { name, allowedOrigins: origins.split(/[\n,]/).map(s => s.trim()).filter(Boolean) });
-      toast('Saved'); reload();
-    } catch (e: any) { toast(e.message, 'err'); }
-  };
+  const addOrigin = () => { const v = draft.trim().replace(/\/$/, ''); if (!v) return; if (!/^https?:\/\/[\w.-]+(:\d+)?$/.test(v)) { toast('Use the form https://example.com (no path)', 'err'); return; } if (!origins.includes(v)) setOrigins([...origins, v]); setDraft(''); };
+  const save = async () => { try { await api.put(`/api/licenses/${license.id}`, { name, allowedOrigins: origins }); toast('Settings saved'); reload(); } catch (e: any) { toast(e.message, 'err'); } };
+  const rotate = async () => { try { setNewKey((await api.post(`/api/licenses/${license.id}/rotate-key`)).licenseKey); reload(); } catch (e: any) { toast(e.message, 'err'); } };
 
   return (
-    <div className="stack">
-      <section className="card">
-        <h3>How it works</h3>
-        <ol className="steps">
-          <li>Your <b>server</b> calls our API with your <b>secret license key</b> and gets a short-lived play link.</li>
-          <li>Your website or app shows that link inside an iframe / WebView.</li>
-          <li>Players pick a username and play. You see everything under <b>Players &amp; Results</b>.</li>
-        </ol>
-        <p className="muted small">The key never reaches your players: they only ever see a temporary session link that expires after 15 minutes. <a href="/docs/" target="_blank" rel="noreferrer">Read the full integration guide ↗</a></p>
-      </section>
-
-      <section className="card">
-        <h3>Your license key</h3>
-        <div className="row"><div className="secret grow">{license.keyPrefix}••••••••••••••••••••••••••••</div><button className="btn" onClick={rotate}>Rotate key</button></div>
-        <p className="muted small">The full key was shown once when you bought this game. If you lost it, rotate it to get a new one.</p>
-      </section>
-
-      <section className="card">
-        <h3>Settings</h3>
-        <div className="field"><label>Name (for you only)</label><input value={name} maxLength={40} onChange={e => setName(e.target.value)} /></div>
-        <div className="field wide"><label>Allowed websites (optional)</label>
-          <div className="help">One per line, e.g. <span className="mono">https://www.mysite.com</span>. When set, browsers only allow the game to be embedded on these sites. Mobile apps (Flutter WebView) are not affected.</div>
-          <textarea rows={3} value={origins} onChange={e => setOrigins(e.target.value)} placeholder="Leave empty to allow any website" />
-        </div>
-        <button className="btn primary" onClick={saveMeta}>Save settings</button>
-      </section>
-
-      <Snippets baseUrl={location.origin} />
+    <div className="stack" style={{ maxWidth: 820 }}>
+      <Card>
+        <h2 style={{ marginBottom: 14 }}>General</h2>
+        <label className="lbl">Name (only you see this)</label>
+        <input value={name} maxLength={40} onChange={e => setName(e.target.value)} />
+        <div style={{ height: 18 }} />
+        <label className="lbl">Allowed websites <Badge>optional</Badge></label>
+        <div className="row"><input placeholder="https://www.yoursite.com" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addOrigin())} /><Button onClick={addOrigin}>Add</Button></div>
+        <div className="help">When you add sites, browsers will refuse to show the game anywhere else. Mobile WebViews are not affected. Leave empty to allow any site.</div>
+        {origins.length > 0 && <div className="chips" style={{ marginTop: 12 }}>{origins.map(o => <span className="chip" key={o}>{o}<button onClick={() => setOrigins(origins.filter(x => x !== o))} aria-label="Remove"><Icon name="x" size={12} /></button></span>)}</div>}
+        <div style={{ marginTop: 18 }}><Button variant="primary" icon="check" onClick={save}>Save settings</Button></div>
+      </Card>
+      <Card>
+        <h2 style={{ marginBottom: 6 }}>License key</h2>
+        <p className="muted" style={{ marginBottom: 14 }}>The full key was shown once when you bought this game. If it leaked or you lost it, rotate it. The old key stops working immediately.</p>
+        <div className="row"><div className="secret grow">{license.keyPrefix}••••••••••••••••••••••••••••</div>
+          <Button variant="danger" icon="refresh" onClick={() => { if (confirm('Rotate the key? Your current key stops working immediately.')) rotate(); }}>Rotate key</Button></div>
+      </Card>
       {newKey && (
-        <Modal title="🔑 Your new license key" onClose={() => setNewKey('')}>
+        <Modal title="Your new license key" onClose={() => setNewKey('')}>
           <p>Copy it now: <b>it will not be shown again</b>. The old key no longer works.</p>
           <div className="secret">{newKey}</div>
-          <div className="row end"><button className="btn primary" onClick={() => setNewKey('')}>Done</button></div>
+          <div className="row end"><Button icon="copy" onClick={() => { navigator.clipboard?.writeText(newKey); toast('Copied'); }}>Copy</Button><Button variant="primary" onClick={() => setNewKey('')}>Done</Button></div>
         </Modal>
       )}
     </div>

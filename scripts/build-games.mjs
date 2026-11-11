@@ -8,7 +8,7 @@ import os from 'node:os';
 const root = path.resolve(import.meta.dirname, '..');
 const project = path.join(root, 'cocos');
 const outDir = path.join(project, 'build', 'player');
-const slugs = ['lucky-spin', 'lucky-77', 'ludo'];
+const slugs = ['lucky-wheel'];
 const creatorDir = process.env.COCOS_CREATOR_DIR || 'C:\\ProgramData\\cocos\\editors\\Creator\\3.8.8';
 const exe = path.join(creatorDir, 'CocosCreator.exe');
 const skip = process.argv.includes('--skip-build');

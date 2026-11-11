@@ -4,5 +4,5 @@ const target = 'http://localhost:3000';
 export default defineConfig({
   plugins: [react()],
   build: { outDir: '../server/public/app', emptyOutDir: true },
-  server: { port: 5173, proxy: { '/api': target, '/g': target, '/uploads': target, '/sdk': target } },
+  server: { port: 5173, proxy: { '/api': target, '/g': target, '/uploads': target, '/sdk': target, '/docs': target, '/defaults': target } },
 });

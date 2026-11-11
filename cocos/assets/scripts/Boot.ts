@@ -1,12 +1,12 @@
-import { director, Director, Node, Canvas, Camera, UITransform, Layers, view, ResolutionPolicy, Color, Scene, tween, Vec3 } from 'cc';
+import { director, Director, Canvas, Camera, UITransform, Layers, view, ResolutionPolicy, Color, Scene, tween } from 'cc';
 import { Api, ApiError, Player } from './core/Api';
 import { Background } from './core/Background';
-import { loadImage } from './core/Art';
 import { GameCtx } from './core/GameBase';
 import { Hud, Theme } from './core/Hud';
 import { showFatal, showLogin } from './core/Login';
 import { ParticleLayer } from './core/Particles';
 import { Sfx } from './core/Sfx';
+import { Ticker } from './core/Ticker';
 import { emit } from './core/Host';
 import { hex, mk, ensureOpacity } from './core/Util';
 import { label } from './core/Widgets';
@@ -30,11 +30,12 @@ async function start() {
   cam.clearFlags = Camera.ClearFlag.SOLID_COLOR;
   cam.clearColor = new Color(14, 12, 30, 255);
   canvas.cameraComponent = cam;
+  Ticker.install(canvasNode);
   const vis = () => view.getVisibleSize();
   canvasNode.getComponent(UITransform)!.setContentSize(vis().width, DESIGN_H);
 
   const unlock = () => Sfx.unlock();
-  ['pointerdown', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, unlock, { once: false, passive: true }));
+  ['pointerdown', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, unlock, { passive: true }));
 
   // ---- loading indicator ----
   const loadingNode = mk('loading', canvasNode, 0, 0);
@@ -48,18 +49,11 @@ async function start() {
     return;
   }
   const cfg = boot.config;
-  const theme: Theme = { primary: '#7c3aed', secondary: '#fbbf24', background: '#1e1b4b', text: '#ffffff', ...(cfg.theme || {}) };
+  const theme: Theme = { primary: '#7c3aed', secondary: '#fbbf24', background: '#14052e', text: '#ffffff', popup: '#2b0f73', accent: '#facc15', ...(cfg.theme || {}) };
   cfg.theme = theme;
   cam.clearColor = hex(theme.background);
   document.body.style.background = theme.background;
   document.title = cfg.title || document.title;
-  loadingNode.destroy();
-
-  // warm up buyer images so the first frame is complete
-  const urls: string[] = [cfg.images?.logo, cfg.images?.background];
-  (cfg.prizes || []).forEach((p: any) => urls.push(p.image));
-  (cfg.symbols || []).forEach((s: any) => urls.push(s.image));
-  await Promise.all(urls.filter(Boolean).map(u => loadImage(u)));
 
   // ---- layers ----
   let vw = vis().width;
@@ -81,19 +75,20 @@ async function start() {
 
   // ---- username ----
   let player: Player | null = boot.player;
-  if (!player) {
-    await showLogin(cfg, async name => { player = await api.login(name); });
-  }
+  if (!player) await showLogin(cfg, async name => { player = await api.login(name); });
   if (!player) { showFatal('Could not sign in.'); return; }
   emit('login', { username: player.username, balance: player.balance });
 
-  const hud = new Hud(stage, cfg, theme, player, api, uiLayer);
-  const ctx: GameCtx = { stage, uiLayer, fx, api, cfg, player, hud, theme, vw, vh: DESIGN_H };
+  const hud = new Hud(cfg, theme, player, api, uiLayer);
+  const stageScale = Math.min(1, (vw - 8) / 720);
+  // the stage is scaled down on narrow screens, so it has more vertical room than 1280 design units
+  const ctx: GameCtx = { stage, uiLayer, fx, api, cfg, player, hud, theme, vw, vh: DESIGN_H / stageScale };
 
   const GameClass = GAMES[boot.game];
   if (!GameClass) { showFatal(`Unknown game "${boot.game}".`, false); return; }
   try {
     await new GameClass(ctx).start();
+    loadingNode.destroy();
     emit('ready', { game: boot.game });
   } catch (e) {
     console.error(e);
@@ -102,4 +97,3 @@ async function start() {
 }
 
 director.once(Director.EVENT_AFTER_SCENE_LAUNCH, () => { start().catch(e => { console.error(e); showFatal('Unexpected error: ' + (e as Error).message); }); });
-void Node; void Vec3;

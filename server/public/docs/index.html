@@ -160,7 +160,8 @@ class _GameScreenState extends State&lt;GameScreen&gt; {
     <tr><th>type</th><th>data</th><th>When</th></tr>
     <tr><td><code>login</code></td><td><code>{ username, balance }</code></td><td>The player is signed in</td></tr>
     <tr><td><code>ready</code></td><td><code>{ game }</code></td><td>The game is on screen</td></tr>
-    <tr><td><code>round</code></td><td><code>{ game, bet, win, balance, … }</code></td><td>A round finished. Lucky Spin adds <code>multiplier</code>, <code>label</code>; Lucky 77 adds <code>lines</code>, <code>jackpot</code>; Ludo adds <code>placement</code>.</td></tr>
+    <tr><td><code>round</code></td><td><code>{ game, round, bet, win, hits, balance }</code></td><td>A wheel round was paid. <code>hits</code> lists the winning option codes (more than one when the bonus triggers).</td></tr>
+    <tr><td><code>exit</code></td><td><code>{}</code></td><td>The player pressed the back button. Close the game or navigate away.</td></tr>
     <tr><td><code>error</code></td><td><code>{ message }</code></td><td>Web SDK only: your session endpoint failed</td></tr>
   </table>
   <p>Events are for your UI (analytics, rewards in your own system, and so on). <b>The authoritative record of every round is on our server and visible in your dashboard.</b></p>
@@ -168,14 +169,17 @@ class _GameScreenState extends State&lt;GameScreen&gt; {
 
 <section id="custom">
   <h2>Customizing a game</h2>
+  <p>Every visual is an <b>asset slot</b>: drag a file onto it in the dashboard and the live preview updates after you save.</p>
   <p>Open <b>My games → your game → Customize</b>. Changes apply to new sessions immediately.</p>
   <table>
     <tr><th>Game</th><th>You can change</th></tr>
-    <tr><td><b>Lucky Spin</b></td><td>Title, logo, background, colors, currency name, starting balance, bet sizes, up to 12 wheel segments (label, multiplier, odds weight, color, icon)</td></tr>
-    <tr><td><b>Lucky 77</b></td><td>Title, logo, background, colors, currency name, starting balance, bet sizes, 3-8 reel symbols (label, payout multiplier, odds weight, color, image)</td></tr>
-    <tr><td><b>Ludo Royale</b></td><td>Title, logo, background, colors, the four player colors, currency name, starting balance, entry fee, 1st/2nd place payouts, bot difficulty</td></tr>
+    <tr><td><b>Look</b></td><td>Background (image, SVG or <b>video</b>), wheel frame and disc, hub, ribbon, bet boxes, every button, logo, avatar, colors</td></tr>
+    <tr><td><b>Animations</b></td><td>Ambient loop behind the wheel, win celebration, lucky-77 celebration: <b>video (MP4/WebM)</b>, sprite sheet or image</td></tr>
+    <tr><td><b>Sound</b></td><td>Background music, spin, tick, chip, win and lose sounds (MP3 / OGG / WAV / M4A)</td></tr>
+    <tr><td><b>Rules</b></td><td>Bet options (name, multiplier, icon, badge), wheel layout and odds, bonus chance, chips and their values, starting balance, max bet, round timing</td></tr>
+    <tr><td><b>Texts</b></td><td>Every label, the how-to-play steps and all popup titles</td></tr>
   </table>
-  <p>Uploads: PNG, JPG, WebP or GIF up to 2 MB. Transparent PNGs work best for logos and icons.</p>
+  <p>Upload limits: images 3 MB, SVG 300 KB (scripts and external links are rejected), video 10 MB, audio 4 MB. Transparent PNG/WebP/SVG work best for icons; WebM keeps transparency for effects. Anything you do not upload keeps the default.</p>
 </section>
 
 <section id="players">

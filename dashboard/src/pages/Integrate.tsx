@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { copy } from '../api';
 import { useApp } from '../App';
+import { Button, Card } from '../ui';
 
 export function Snippets({ baseUrl }: { baseUrl: string }) {
   const { toast } = useApp();
   const [tab, setTab] = useState('node');
+  const [ctab, setCtab] = useState('web');
   const B = baseUrl;
 
-  const server: Record<string, { label: string; lang: string; code: string }> = {
-    node: { label: 'Node.js', lang: 'js', code: `// Runs on YOUR server. Keep the key in an environment variable.
+  const server: Record<string, { label: string; code: string }> = {
+    node: { label: 'Node.js', code: `// Runs on YOUR server. Keep the key in an environment variable.
 app.post('/game-session', async (req, res) => {
   const r = await fetch('${B}/api/v1/sessions', {
     method: 'POST',
@@ -16,9 +18,9 @@ app.post('/game-session', async (req, res) => {
     // username is optional: pass your logged-in user's name to skip the username screen
     body: JSON.stringify({ username: req.user?.username }),
   });
-  res.json(await r.json()); // { playUrl, sessionToken, expiresIn }
+  res.status(r.status).json(await r.json()); // { playUrl, sessionToken, expiresIn }
 });` },
-    php: { label: 'PHP', lang: 'php', code: `<?php
+    php: { label: 'PHP', code: `<?php
 // Runs on YOUR server. Keep the key in an environment variable.
 $ch = curl_init('${B}/api/v1/sessions');
 curl_setopt_array($ch, [
@@ -29,7 +31,7 @@ curl_setopt_array($ch, [
 ]);
 header('Content-Type: application/json');
 echo curl_exec($ch); // { playUrl, sessionToken, expiresIn }` },
-    python: { label: 'Python', lang: 'py', code: `import os, requests
+    python: { label: 'Python', code: `import os, requests
 
 # Runs on YOUR server. Keep the key in an environment variable.
 def create_game_session(username=None):
@@ -41,25 +43,25 @@ def create_game_session(username=None):
     )
     r.raise_for_status()
     return r.json()  # {"playUrl": ..., "sessionToken": ..., "expiresIn": 900}` },
-    curl: { label: 'cURL', lang: 'sh', code: `curl -X POST ${B}/api/v1/sessions \\
+    curl: { label: 'cURL', code: `curl -X POST ${B}/api/v1/sessions \\
   -H "Authorization: Bearer YOUR_LICENSE_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"username":"optional_player_name"}'` },
   };
-  const client: Record<string, { label: string; lang: string; code: string }> = {
-    web: { label: 'Website (JS SDK)', lang: 'html', code: `<div id="game" style="width:100%;max-width:480px;height:720px"></div>
+  const client: Record<string, { label: string; code: string }> = {
+    web: { label: 'Website (JS SDK)', code: `<div id="game" style="width:100%;max-width:480px;height:760px"></div>
 <script src="${B}/sdk/minigames.js"></script>
 <script>
   // "/game-session" is the endpoint YOU created above (it holds the secret key)
   MiniGames.mount('#game', {
     sessionEndpoint: '/game-session',
-    onEvent: (e) => console.log(e.type, e.data), // ready, login, round, balance
+    onEvent: (e) => console.log(e.type, e.data), // login, ready, round, exit
   });
 </script>` },
-    iframe: { label: 'Plain iframe', lang: 'html', code: `<!-- playUrl is the value your server received from the API -->
-<iframe src="PLAY_URL_FROM_YOUR_SERVER" width="480" height="720"
+    iframe: { label: 'Plain iframe', code: `<!-- playUrl is the value your server received from the API -->
+<iframe src="PLAY_URL_FROM_YOUR_SERVER" width="480" height="760"
         style="border:0" allow="autoplay; fullscreen"></iframe>` },
-    flutter: { label: 'Flutter', lang: 'dart', code: `// pubspec.yaml: webview_flutter: ^4.9.0, http: ^1.2.0
+    flutter: { label: 'Flutter', code: `// pubspec.yaml: webview_flutter: ^4.9.0, http: ^1.2.0
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:webview_flutter/webview_flutter.dart';
@@ -76,27 +78,23 @@ Future<WebViewController> openGame() async {
       print('game event: \${m.message}');
     })
     ..loadRequest(Uri.parse(playUrl));
-}
-
-// In your widget tree: WebViewWidget(controller: controller)` },
+}` },
   };
-  const [ctab, setCtab] = useState('web');
-
   const Block = ({ s }: { s: { code: string } }) => (
-    <div className="code"><button className="btn sm copy" onClick={async () => { await copy(s.code); toast('Copied'); }}>Copy</button><pre>{s.code}</pre></div>
+    <div className="codebox"><Button size="sm" className="copy" onClick={async () => { await copy(s.code); toast('Copied'); }} icon="copy">Copy</Button><pre>{s.code}</pre></div>
   );
   return (
     <>
-      <section className="card">
-        <h3>Step 1: your server creates a session <span className="pill">server-side</span></h3>
-        <div className="seg">{Object.entries(server).map(([k, v]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{v.label}</button>)}</div>
+      <Card className="stack-sm">
+        <div className="row between wrap"><h2>Step 1 · Create a session on your server</h2>
+          <div className="seg">{Object.entries(server).map(([k, v]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{v.label}</button>)}</div></div>
         <Block s={server[tab]} />
-      </section>
-      <section className="card">
-        <h3>Step 2: show the game <span className="pill">website or app</span></h3>
-        <div className="seg">{Object.entries(client).map(([k, v]) => <button key={k} className={ctab === k ? 'on' : ''} onClick={() => setCtab(k)}>{v.label}</button>)}</div>
+      </Card>
+      <Card className="stack-sm">
+        <div className="row between wrap"><h2>Step 2 · Show the game in your site or app</h2>
+          <div className="seg">{Object.entries(client).map(([k, v]) => <button key={k} className={ctab === k ? 'on' : ''} onClick={() => setCtab(k)}>{v.label}</button>)}</div></div>
         <Block s={client[ctab]} />
-      </section>
+      </Card>
     </>
   );
 }

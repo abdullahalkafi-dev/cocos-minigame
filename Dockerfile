@@ -5,7 +5,7 @@ COPY package.json package-lock.json ./
 COPY server/package.json server/
 COPY dashboard/package.json dashboard/
 COPY sdk/package.json sdk/
-RUN npm ci
+RUN npm ci --workspace server --workspace dashboard --workspace sdk --include-workspace-root=false
 COPY dashboard dashboard
 COPY sdk sdk
 RUN npm run build -w dashboard && npm run build -w sdk
