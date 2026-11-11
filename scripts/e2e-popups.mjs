@@ -1,11 +1,11 @@
-// Opens every popup of the wheel game and screenshots it.  node scripts/e2e-popups.mjs <host> <licenseKey>
+// Opens every popup of the wheel game and screenshots it.  node scripts/e2e-popups.mjs <host> <apiKey> <gameId>
 import { mintSession, open, sleep } from './lib/playtest.mjs';
-const [base, key] = process.argv.slice(2);
-const url = await mintSession(base, key, 'popup_tester') + '&debug=1';
+const [base, key, gameId] = process.argv.slice(2);
+const url = await mintSession(base, key, gameId, 'popup_tester') + '&debug=1';
 const g = await open(url, { w: 390, h: 844, scale: 2 });
 await sleep(9000);
 // place a couple of bets so "My bets" has content
-await g.tap(0, -400); await sleep(400);
+await g.tapB(0, 250); await sleep(400);
 const run = async (name, fn, wait = 1200) => { await g.page.evaluate(fn); await sleep(wait); await g.shot('pop-' + name); await g.page.evaluate(() => window.__game.closePopup()); await sleep(300); };
 await run('howto', () => window.__game.openHowTo());
 await run('history', () => window.__game.openHistory());

@@ -1,9 +1,9 @@
 // Proves every media type works end to end: generates a real WebM video, an SVG, a sprite sheet and a WAV sound in a
 // headless browser, uploads them through the dashboard API into the right slots, then opens the game and checks it.
-//   node scripts/e2e-media.mjs <host> <email> <password> <licenseId> <licenseKey>
+//   node scripts/e2e-media.mjs <host> <email> <password> <gameId> <apiKey>
 import { chromium } from 'playwright';
 import { mintSession, open, sleep } from './lib/playtest.mjs';
-const [base, email, password, licId, licKey] = process.argv.slice(2);
+const [base, email, password, licId, apiKey] = process.argv.slice(2);
 const j = async (m, u, t, b) => { const r = await fetch(base + u, { method: m, headers: { ...(t ? { Authorization: 'Bearer ' + t } : {}), ...(b && !(b instanceof FormData) ? { 'Content-Type': 'application/json' } : {}) }, body: b instanceof FormData ? b : b ? JSON.stringify(b) : undefined }); const x = await r.json(); if (!r.ok) throw new Error(u + ' ' + x.error); return x; };
 const T = (await j('POST', '/api/auth/login', null, { email, password })).token;
 
@@ -42,7 +42,7 @@ await j('PUT', `/api/licenses/${licId}/config`, T, { config: {
   'assets.sfxWin': { url: wv.url },
   chips: cur.config.chips.map((c, i) => (i === 0 ? { ...c, image: { url: sv.url } } : c)),
 } });
-const url = await mintSession(base, licKey, 'media_tester') + '&debug=1';
+const url = await mintSession(base, apiKey, licId, 'media_tester') + '&debug=1';
 const g = await open(url, { w: 390, h: 844, scale: 2 });
 await sleep(10000);
 await g.shot('media-1');

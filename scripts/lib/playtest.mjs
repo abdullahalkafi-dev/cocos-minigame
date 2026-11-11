@@ -1,8 +1,8 @@
 // Helpers for driving a built game headlessly (Playwright + Chromium).
 import { chromium } from 'playwright';
 
-export async function mintSession(base, licenseKey, username) {
-  const r = await fetch(`${base}/api/v1/sessions`, { method: 'POST', headers: { Authorization: `Bearer ${licenseKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(username ? { username } : {}) });
+export async function mintSession(base, apiKey, gameId, username) {
+  const r = await fetch(`${base}/api/v1/sessions`, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ gameId, ...(username ? { username } : {}) }) });
   const j = await r.json();
   if (!r.ok) throw new Error(`session failed: ${j.error}`);
   return j.playUrl;
@@ -25,6 +25,9 @@ export async function open(url, { w = 390, h = 844, scale = 1, log = true } = {}
   return {
     browser, page, errors, toScreen,
     tap: async (x, y) => { const [sx, sy] = toScreen(x, y); await page.mouse.click(sx, sy); },
+    // the game anchors its bottom controls to the screen edge: tapB(x, offsetFromBottom) in stage units
+    H: 1280 / fit,
+    tapB: async (x, off) => { const [sx, sy] = toScreen(x, -(1280 / fit) / 2 + off); await page.mouse.click(sx, sy); },
     shot: async (name) => { await page.screenshot({ path: `tmp/${name}.png` }); console.log('shot', name); },
     close: () => browser.close(),
   };

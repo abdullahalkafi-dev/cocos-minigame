@@ -7,6 +7,7 @@ import { showFatal, showLogin } from './core/Login';
 import { ParticleLayer } from './core/Particles';
 import { Sfx } from './core/Sfx';
 import { Ticker } from './core/Ticker';
+import { Loader } from './core/Loader';
 import { emit } from './core/Host';
 import { hex, mk, ensureOpacity } from './core/Util';
 import { label } from './core/Widgets';
@@ -54,6 +55,7 @@ async function start() {
   cam.clearColor = hex(theme.background);
   document.body.style.background = theme.background;
   document.title = cfg.title || document.title;
+  loadingNode.destroy();
 
   // ---- layers ----
   let vw = vis().width;
@@ -79,16 +81,17 @@ async function start() {
   if (!player) { showFatal('Could not sign in.'); return; }
   emit('login', { username: player.username, balance: player.balance });
 
+  const loader = new Loader(canvasNode, cfg.title || 'Loading', theme);
   const hud = new Hud(cfg, theme, player, api, uiLayer);
   const stageScale = Math.min(1, (vw - 8) / 720);
   // the stage is scaled down on narrow screens, so it has more vertical room than 1280 design units
-  const ctx: GameCtx = { stage, uiLayer, fx, api, cfg, player, hud, theme, vw, vh: DESIGN_H / stageScale };
+  const ctx: GameCtx = { stage, uiLayer, fx, api, cfg, player, hud, theme, vw, vh: DESIGN_H / stageScale, loader };
 
   const GameClass = GAMES[boot.game];
   if (!GameClass) { showFatal(`Unknown game "${boot.game}".`, false); return; }
   try {
     await new GameClass(ctx).start();
-    loadingNode.destroy();
+    loader.done();
     emit('ready', { game: boot.game });
   } catch (e) {
     console.error(e);

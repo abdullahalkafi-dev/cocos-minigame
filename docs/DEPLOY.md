@@ -77,7 +77,7 @@ Open the printed play link in a phone browser, and the dashboard at the root URL
 ## What to hand to a client
 
 1. The production URL (the dashboard) and the integration guide at `<URL>/docs/`.
-2. They sign up, buy a game, copy the license key, paste it into their backend, embed `playUrl` in their site/app.
+2. They sign up (the API key is shown once), buy a game, copy its game ID, create sessions from their backend with the key and the game ID, and embed `playUrl` in their site/app.
 
 ## Updating
 

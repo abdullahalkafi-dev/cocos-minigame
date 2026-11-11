@@ -52,14 +52,6 @@ export const rand = (a: number, b: number) => a + Math.random() * (b - a);
 export const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 export const fmtNum = (n: number) => Math.round(n).toLocaleString('en-US');
 
-/** Cryptographic die roll 1..6 (client-side randomness for Ludo). */
-export function secureInt(min: number, max: number): number {
-  const range = max - min + 1;
-  const buf = new Uint32Array(1);
-  crypto.getRandomValues(buf);
-  return min + (buf[0] % range);
-}
-
 /** Promise-based delay driven by the engine's tween scheduler. */
 export function wait(sec: number): Promise<void> {
   return new Promise(res => { tween({}).delay(sec).call(() => res()).start(); });

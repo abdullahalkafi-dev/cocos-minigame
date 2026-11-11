@@ -4,7 +4,7 @@ A demo product for selling reusable, customizable mini games:
 
 - **Lucky Wheel 77**: a live betting-wheel game built with Cocos Creator 3.8, where every visual (image, SVG, video, sound), rule, odd, chip and text is a dynamic setting
 - **Buyer dashboard**: sign up, buy games with demo credits, customize them in an asset studio with live preview, see players and results
-- **License keys + session API**: a buyer's server creates short-lived play links; the game runs in any website or mobile app
+- **One API key per account + a game ID per game**: a buyer's server creates short-lived play links for any game they own; the game runs in any website or mobile app
 - **Embed SDK** for websites; WebView instructions for Flutter / Android / iOS
 
 > What each game uses, in plain language and in technical detail: [`docs/GAMES.md`](docs/GAMES.md).
@@ -17,17 +17,17 @@ A demo product for selling reusable, customizable mini games:
  Buyer (your client's customer)                     Your server (this repo)                        Player
  ─────────────────────────────                     ───────────────────────                        ──────
  1. signs up, buys a game with demo credits ─────▶  dashboard + wallet + store
- 2. gets a SECRET license key (shown once)
+ 2. gets ONE secret API key for the whole account (shown at sign-up, rotatable); each game has a game ID
  3. customizes images / prizes / currency  ─────▶  stored as JSON per license
  4. buyer's backend: POST /api/v1/sessions ─────▶  returns a 15-minute playUrl
-       (Authorization: Bearer <license key>)
+       (Authorization: Bearer <API key>, body { gameId })
  5. buyer's site/app opens playUrl in iframe/WebView ───────────────────────────────────────────▶  picks a username, plays
                                                     game build loads *that buyer's* config
                                                     every round is decided + saved on the server
  6. buyer opens "Players & Results" ◀────────────   players, rounds, wins, payout rate, CSV export
 ```
 
-The license key never reaches a player. They only ever see the temporary session link.
+The API key never reaches a player. They only ever see the temporary session link. One key serves every game the account owns, so a client with 20 games manages one secret.
 
 ## Repository layout
 
@@ -56,14 +56,14 @@ Open http://localhost:3000, create an account (you get 10,000 demo credits), buy
 Quick demo data (two differently customized copies of Lucky Wheel 77, with players and settled rounds):
 
 ```bash
-npm run seed           # prints the buyer login and every license key / play link (takes about a minute: it plays real rounds)
+npm run seed           # prints the buyer login, the account API key and the game IDs / play links (takes about a minute: it plays real rounds)
 ```
 
 Try the sample client website with one of those keys:
 
 ```bash
 cd samples/client-website
-MINIGAME_KEY=mgk_... MINIGAME_HOST=http://localhost:3000 node server.mjs    # http://localhost:4000
+MINIGAME_API_KEY=mgs_... MINIGAME_GAME_ID=lic_... MINIGAME_HOST=http://localhost:3000 node server.mjs    # http://localhost:4000
 ```
 
 ### Rebuilding the games (Cocos Creator)
@@ -80,9 +80,9 @@ Set `COCOS_CREATOR_DIR` if Creator is not at `C:\ProgramData\cocos\editors\Creat
 
 ```bash
 npm test                                       # server: round flow + payout math, odds simulation, isolation, validation, uploads
-node scripts/e2e-wheel.mjs   <host> <key>      # headless-browser play-through, screenshots in tmp/
-node scripts/e2e-popups.mjs  <host> <key>      # every popup
-node scripts/e2e-media.mjs   <host> <email> <password> <licenseId> <key>   # video / SVG / sprite sheet / audio end to end
+node scripts/e2e-wheel.mjs   <host> <apiKey> <gameId>      # headless-browser play-through of every phase, screenshots in tmp/
+node scripts/e2e-popups.mjs  <host> <apiKey> <gameId>      # every popup
+node scripts/e2e-media.mjs   <host> <email> <password> <gameId> <apiKey>   # video / SVG / sprite sheet / audio end to end
 node scripts/e2e-full.mjs    <host>            # signup -> buy x2 -> customize -> two client sites -> live round -> dashboard
 node scripts/e2e-dashboard.mjs <host> <email> <password> <licenseId>      # screenshots of every dashboard screen
 ```

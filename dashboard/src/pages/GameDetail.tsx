@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink, Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useApp } from '../App';
-import { Badge, Button, Card, Empty, Icon, Modal, PageHead, Skeleton } from '../ui';
+import { Badge, Button, Card, Empty, Icon, PageHead, Skeleton } from '../ui';
 import Studio from './Studio';
 import PlayersTab from './Players';
 import { Snippets } from './Integrate';
@@ -19,7 +19,7 @@ export default function GameDetail() {
   const { license, game } = data;
   return (
     <div>
-      <PageHead back={{ to: '/games', label: 'My games' }} title={<>{license.name} <Badge tone="brand">{game.name}</Badge></>} sub={<span className="mono small">{license.keyPrefix}••••••••</span>} />
+      <PageHead back={{ to: '/games', label: 'My games' }} title={<>{license.name} <Badge tone="brand">{game.name}</Badge></>} sub={<span className="row" style={{ gap: 8 }}><span className="muted small">Game ID</span><span className="code">{license.gameId}</span><button className="btn ghost sm" onClick={() => { navigator.clipboard?.writeText(license.gameId); }} title="Copy game ID"><Icon name="copy" size={14} /></button></span>} />
       <div className="tabs">
         <NavLink to={`/games/${id}/customize`}><Icon name="palette" size={16} />Customize</NavLink>
         <NavLink to={`/games/${id}/integrate`}><Icon name="plug" size={16} />Integrate</NavLink>
@@ -39,21 +39,24 @@ export default function GameDetail() {
 
 function Integrate({ data }: { data: any }) {
   const { license } = data;
-  const { toast } = useApp();
+  const { user } = useApp();
   const open = async () => { const r = await api.post(`/api/licenses/${license.id}/preview-session`); window.open(r.playUrl, '_blank'); };
   return (
     <div className="stack">
       <Card>
         <h2 style={{ marginBottom: 16 }}>How it works</h2>
         <div className="stack">
-          <div className="step"><div className="n">1</div><div><b>Your server creates a session</b><p className="muted">It calls our API with your secret license key and receives a play link that expires in 15 minutes.</p></div></div>
+          <div className="step"><div className="n">1</div><div><b>Your server creates a session</b><p className="muted">It calls our API with your account <b>API key</b> and this game&apos;s <b>ID</b>, and receives a play link that expires in 15 minutes.</p></div></div>
           <div className="step"><div className="n">2</div><div><b>Your site or app shows the game</b><p className="muted">Load the link in an iframe (website) or a WebView (Flutter, Android, iOS). The player picks a username and plays.</p></div></div>
-          <div className="step"><div className="n">3</div><div><b>You watch the results</b><p className="muted">Players, bets and payouts appear live under <i>Players &amp; results</i>. The key itself never reaches a player.</p></div></div>
+          <div className="step"><div className="n">3</div><div><b>You watch the results</b><p className="muted">Players, bets and payouts appear live under <i>Players &amp; results</i>. The API key never reaches a player.</p></div></div>
         </div>
-        <div className="row" style={{ marginTop: 18 }}><Button icon="play" onClick={open}>Try the game in a new tab</Button><a href="/docs/" target="_blank" rel="noreferrer"><Button variant="ghost" icon="book">Full integration guide</Button></a></div>
+        <div className="row wrap" style={{ marginTop: 18 }}>
+          <Button icon="play" onClick={open}>Try the game in a new tab</Button>
+          <a href="/docs/" target="_blank" rel="noreferrer"><Button variant="ghost" icon="book">Full integration guide</Button></a>
+          <Link to="/api-key"><Button variant="ghost" icon="key">{user?.hasApiKey ? 'Manage API key' : 'Create your API key'}</Button></Link>
+        </div>
       </Card>
-      <Snippets baseUrl={location.origin} />
-      <span className="sr">{String(!!toast)}</span>
+      <Snippets baseUrl={location.origin} gameId={license.gameId} />
     </div>
   );
 }
@@ -61,14 +64,12 @@ function Integrate({ data }: { data: any }) {
 function Settings({ data, reload }: { data: any; reload: () => void }) {
   const { license } = data;
   const { toast } = useApp();
-  const [newKey, setNewKey] = useState('');
   const [name, setName] = useState(license.name);
   const [origins, setOrigins] = useState<string[]>(license.allowedOrigins);
   const [draft, setDraft] = useState('');
 
   const addOrigin = () => { const v = draft.trim().replace(/\/$/, ''); if (!v) return; if (!/^https?:\/\/[\w.-]+(:\d+)?$/.test(v)) { toast('Use the form https://example.com (no path)', 'err'); return; } if (!origins.includes(v)) setOrigins([...origins, v]); setDraft(''); };
   const save = async () => { try { await api.put(`/api/licenses/${license.id}`, { name, allowedOrigins: origins }); toast('Settings saved'); reload(); } catch (e: any) { toast(e.message, 'err'); } };
-  const rotate = async () => { try { setNewKey((await api.post(`/api/licenses/${license.id}/rotate-key`)).licenseKey); reload(); } catch (e: any) { toast(e.message, 'err'); } };
 
   return (
     <div className="stack" style={{ maxWidth: 820 }}>
@@ -83,19 +84,6 @@ function Settings({ data, reload }: { data: any; reload: () => void }) {
         {origins.length > 0 && <div className="chips" style={{ marginTop: 12 }}>{origins.map(o => <span className="chip" key={o}>{o}<button onClick={() => setOrigins(origins.filter(x => x !== o))} aria-label="Remove"><Icon name="x" size={12} /></button></span>)}</div>}
         <div style={{ marginTop: 18 }}><Button variant="primary" icon="check" onClick={save}>Save settings</Button></div>
       </Card>
-      <Card>
-        <h2 style={{ marginBottom: 6 }}>License key</h2>
-        <p className="muted" style={{ marginBottom: 14 }}>The full key was shown once when you bought this game. If it leaked or you lost it, rotate it. The old key stops working immediately.</p>
-        <div className="row"><div className="secret grow">{license.keyPrefix}••••••••••••••••••••••••••••</div>
-          <Button variant="danger" icon="refresh" onClick={() => { if (confirm('Rotate the key? Your current key stops working immediately.')) rotate(); }}>Rotate key</Button></div>
-      </Card>
-      {newKey && (
-        <Modal title="Your new license key" onClose={() => setNewKey('')}>
-          <p>Copy it now: <b>it will not be shown again</b>. The old key no longer works.</p>
-          <div className="secret">{newKey}</div>
-          <div className="row end"><Button icon="copy" onClick={() => { navigator.clipboard?.writeText(newKey); toast('Copied'); }}>Copy</Button><Button variant="primary" onClick={() => setNewKey('')}>Done</Button></div>
-        </Modal>
-      )}
     </div>
   );
 }

@@ -14,7 +14,12 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setErr(''); setBusy(true);
-    try { const r = await api.post(`/api/auth/${mode}`, { email, password }); setToken(r.token); await refresh(); nav('/'); }
+    try {
+      const r = await api.post(`/api/auth/${mode}`, { email, password });
+      setToken(r.token); await refresh();
+      // a new account gets its API key right away (shown once)
+      if (r.apiKey) nav('/api-key', { state: { newKey: r.apiKey } }); else nav('/');
+    }
     catch (x: any) { setErr(x.message); }
     setBusy(false);
   };
@@ -27,7 +32,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         <p>Buy a ready-made, animated game, replace every image, video and sound with your own, and drop it into any website or app with one secret key.</p>
         <div className="feat">
           <div><span className="ic"><Icon name="palette" size={15} /></span>Every asset is a slot: image, SVG, video, sound</div>
-          <div><span className="ic"><Icon name="key" size={15} /></span>Secret license key, safe server-to-server sessions</div>
+          <div><span className="ic"><Icon name="key" size={15} /></span>One API key for all your games</div>
           <div><span className="ic"><Icon name="chart" size={15} /></span>Live players, bets and results dashboard</div>
         </div>
         <img className="wheel" src="/defaults/lucky-wheel/wheel-frame.webp" alt="" />

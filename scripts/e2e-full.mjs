@@ -1,6 +1,6 @@
 // The complete story, through real UIs:
 //  buyer signs up -> buys the SAME game twice -> customizes only one copy in the dashboard
-//  -> two different "client websites" (each holding its own secret key) embed them
+//  -> two different "client websites" (ONE account API key, a different game ID each) embed them
 //  -> a player bets on each site and a round settles -> the buyer sees each game's own players/results.
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
@@ -18,15 +18,16 @@ await page.goto(BASE + '/register');
 await page.fill('input[type=email]', email);
 await page.fill('input[type=password]', 'a-long-password');
 await page.click('button.primary');
-await page.waitForURL(BASE + '/');
-console.log('1. signed up as', email);
+await page.waitForURL(BASE + '/api-key');
+await page.waitForSelector('.secret');
+const apiKey = (await page.textContent('.secret')).trim();
+console.log('1. signed up as', email, '| API key shown once:', apiKey.slice(0, 8) + '...');
 
-const keys = [], ids = [];
+const ids = [];
 for (let i = 0; i < 2; i++) {
   await page.goto(BASE + '/store');
-  await page.getByRole('button', { name: /Buy and get my key/ }).click();
+  await page.getByRole('button', { name: /Buy this game/ }).click();
   await page.waitForSelector('.secret');
-  keys.push((await page.textContent('.secret')).trim());
   await page.getByRole('button', { name: /Customize my game/ }).click();
   await page.waitForURL(/\/games\/lic_.*\/customize/);
   ids.push(page.url().match(/games\/(lic_[^/]+)/)[1]);
@@ -46,7 +47,7 @@ await page.waitForSelector('text=Saved');
 console.log('3. customized copy #2 (Tropical Wheel / Pearls / cyan)');
 await page.waitForTimeout(3000);
 
-const sites = ids.map((_, i) => spawn(process.execPath, ['samples/client-website/server.mjs'], { env: { ...process.env, MINIGAME_KEY: keys[i], MINIGAME_HOST: BASE, PORT: String(4101 + i) }, stdio: 'ignore' }));
+const sites = ids.map((_, i) => spawn(process.execPath, ['samples/client-website/server.mjs'], { env: { ...process.env, MINIGAME_API_KEY: apiKey, MINIGAME_GAME_ID: ids[i], MINIGAME_HOST: BASE, PORT: String(4101 + i) }, stdio: 'ignore' }));
 await sleep(1500);
 
 const names = ['maria_01', 'jonas_77'];

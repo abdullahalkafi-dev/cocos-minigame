@@ -26,9 +26,10 @@ async function setup() {
   const buyer = async (email = 'b@test.com') => {
     const reg = await call('POST', '/api/auth/register', undefined, { email, password: 'password123' });
     const T = reg.body.token;
+    const apiKey = reg.body.apiKey as string;            // ONE key per account, returned once at sign-up
     const bought = await call('POST', '/api/store/lucky-wheel/buy', T);
-    const sess = await call('POST', '/api/v1/sessions', bought.body.licenseKey, {});
-    return { T, lic: bought.body.license.id, key: bought.body.licenseKey, session: sess.body.sessionToken };
+    const sess = await call('POST', '/api/v1/sessions', apiKey, { gameId: bought.body.license.id });
+    return { T, lic: bought.body.license.id, apiKey, session: sess.body.sessionToken };
   };
   const player = async (session: string, username: string) => (await call('POST', '/api/play/login', session, { username })).body.token as string;
   /** pretend `ms` milliseconds have passed for every round */
@@ -116,23 +117,47 @@ test('wheel: bet -> settle -> history / my bets / ranking / dashboard', async ()
   assert.equal(again.body.balance, start - 330000 + expectedWin);
 });
 
-test('licenses are isolated, usernames unique per license, keys stay secret', async () => {
+test('one account API key + game ID: isolation, errors, rotation', async () => {
   const { call, buyer, player } = await setup();
   const a = await buyer('a@test.com'), c = await buyer('c@test.com');
+  assert.match(a.apiKey, /^mgs_/);
+  assert.notEqual(a.apiKey, c.apiKey);
+
+  // same username in two different games is fine; bets stay inside their game
   const Pa = await player(a.session, 'same_name'), Pc = await player(c.session, 'same_name');
   await call('POST', '/api/play/wheel/bet', Pa, { bets: [{ target: 'plum', amount: 30000 }] });
   const stC = await call('GET', '/api/play/wheel/state', Pc);
-  assert.equal(stC.body.pot.plum, undefined, 'other license does not see the bet');
+  assert.equal(stC.body.pot.plum, undefined, 'other game does not see the bet');
   assert.equal(stC.body.balance, 5_000_000);
-  assert.equal((await call('GET', `/api/licenses/${a.lic}`, c.T)).status, 404);
-  assert.equal((await call('POST', '/api/v1/sessions', c.T, {})).status, 401, 'dashboard token is not a license key');
-  assert.equal((await call('POST', '/api/v1/sessions', 'mgk_nope', {})).status, 401);
-  const boot = await call('GET', '/api/play/bootstrap', a.session);
+  assert.equal((await call('GET', `/api/licenses/${a.lic}`, c.T)).status, 404, 'dashboard isolation');
+
+  // API errors
+  assert.equal((await call('POST', '/api/v1/sessions', undefined, { gameId: a.lic })).status, 401, 'no key');
+  assert.equal((await call('POST', '/api/v1/sessions', 'mgs_nope', { gameId: a.lic })).status, 401, 'wrong key');
+  assert.equal((await call('POST', '/api/v1/sessions', a.T, { gameId: a.lic })).status, 401, 'dashboard token is not an API key');
+  assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, {})).status, 400, 'gameId is required');
+  assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, { gameId: c.lic })).status, 404, "cannot use someone else's game id");
+  assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, { gameId: a.lic, username: 'x' })).status, 400, 'bad username');
+
+  // the same key serves every game of the account
+  const second = await call('POST', '/api/store/lucky-wheel/buy', a.T);
+  const games = await call('GET', '/api/v1/games', a.apiKey);
+  assert.equal(games.body.games.length, 2);
+  const s2 = await call('POST', '/api/v1/sessions', a.apiKey, { gameId: second.body.license.id, username: 'from_app' });
+  assert.equal(s2.status, 200);
+  assert.match(s2.body.playUrl, /^http:\/\/x\.test\/g\/lucky-wheel\/\?session=/);
+  const boot = await call('GET', '/api/play/bootstrap', s2.body.sessionToken);
+  assert.equal(boot.body.player.username, 'from_app', 'username from the API skips the login screen');
   assert.ok(boot.body.config.assets.background.url.startsWith('http://x.test/defaults/'), 'asset urls are absolute');
   assert.equal(boot.body.config.segments[0].weight, undefined, 'odds do not leak');
-  const rot = await call('POST', `/api/licenses/${a.lic}/rotate-key`, a.T);
-  assert.equal((await call('POST', '/api/v1/sessions', a.key, {})).status, 401);
-  assert.equal((await call('POST', '/api/v1/sessions', rot.body.licenseKey, {})).status, 200);
+
+  // rotation: old key dies, new key works for the same games
+  const info = await call('GET', '/api/account/api-key', a.T);
+  assert.equal(info.body.hasKey, true); assert.equal(info.body.prefix, a.apiKey.slice(0, 12));
+  const rot = await call('POST', '/api/account/api-key', a.T);
+  assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, { gameId: a.lic })).status, 401);
+  assert.equal((await call('POST', '/api/v1/sessions', rot.body.apiKey, { gameId: a.lic })).status, 200);
+  assert.equal((await call('POST', '/api/v1/sessions', c.apiKey, { gameId: c.lic })).status, 200, 'other accounts unaffected');
 });
 
 test('customization: validation, merge, defaults fall back', async () => {

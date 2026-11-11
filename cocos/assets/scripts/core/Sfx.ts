@@ -114,11 +114,7 @@ class SfxImpl {
   click() { this.tone(520, 0.07, 'triangle', 0.12); this.tone(780, 0.06, 'triangle', 0.08, 0.04); }
   tick() { this.tone(1500, 0.03, 'square', 0.05); }
   whoosh() { this.noise(0.9, 0.1, 300, 2400); }
-  reelStop() { this.tone(160, 0.12, 'sine', 0.22, 0, 70); this.noise(0.06, 0.08, 1200, 400); }
-  step() { this.tone(300 + Math.random() * 40, 0.05, 'triangle', 0.08); }
-  dice() { for (let i = 0; i < 6; i++) this.noise(0.04, 0.09, 1800 - i * 150, 500, i * 0.07); }
   thud() { this.tone(110, 0.16, 'sine', 0.25, 0, 50); }
-  capture() { this.tone(500, 0.25, 'sawtooth', 0.1, 0, 120); this.noise(0.25, 0.1, 1500, 200); }
   coin() { this.tone(1318, 0.07, 'square', 0.07); this.tone(1760, 0.18, 'square', 0.07, 0.07); }
   lose() { this.tone(300, 0.2, 'triangle', 0.14); this.tone(220, 0.3, 'triangle', 0.14, 0.15); }
   win(level = 1) {

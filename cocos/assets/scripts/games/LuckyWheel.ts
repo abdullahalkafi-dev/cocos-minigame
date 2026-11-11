@@ -1,6 +1,6 @@
 // Lucky Wheel 77. A shared round clock (betting -> spin -> result) lives on the server; this client only renders it.
 // Every graphic, sound, text, odd and timing comes from the buyer's configuration (asset slots + database).
-import { Node, Sprite, UITransform, Label, tween, Vec3, Color, Tween, BlockInputEvents, SpriteFrame } from 'cc';
+import { Node, Sprite, UITransform, Label, tween, Vec3, Color, Tween, BlockInputEvents, SpriteFrame, Graphics } from 'cc';
 import { Game } from '../core/GameBase';
 import { WheelState } from '../core/Api';
 import { cached, makeFrame, panelFrame, radial, rr, sprite, Tex, vgrad } from '../core/Art';
@@ -8,12 +8,12 @@ import { AssetRef, MediaHandle, spawnMedia, spawnSprite, stillFrame } from '../c
 import { Ticker } from '../core/Ticker';
 import { Sfx } from '../core/Sfx';
 import { emit } from '../core/Host';
-import { ensureOpacity, fmtNum, hex, mk, popIn, shade, wait } from '../core/Util';
+import { clamp, countTo, ensureOpacity, fmtNum, hex, mk, popIn, rand, shade, wait } from '../core/Util';
 import { Button, glowRing, label, toast } from '../core/Widgets';
 
 interface Target { id: string; label: string; multiplier: number; lucky: boolean; icon?: AssetRef; badge?: AssetRef }
 interface ChipCfg { value: number; image?: AssetRef }
-interface BoxView { node: Node; w: number; h: number; pot: Label; mine: Label; glow: Node; chipIcon: Node }
+interface BoxView { node: Node; w: number; h: number; pot: Label; mine: Label; glow: Node; stack: Node; lastCount: number }
 
 const short = (n: number) => {
   const t = (v: number) => String(+v.toFixed(1));
@@ -68,6 +68,18 @@ export class LuckyWheel extends Game {
   private polling = false;
   private soundBtn: Node | null = null;
   private top = 640; private bot = -640; private wy = 150;
+  // life and motion
+  private ghost: Node | null = null;
+  private ring!: Graphics;
+  private hubR = 46;
+  private gemLocalY = 0;
+  private gemGlow: Node | null = null;
+  private moteAcc = 0; private gemAcc = 0;
+  private lastPhase = '';
+  private shownBal = 0;
+  private boxPot = new Map<string, number>();
+  private betSecs = 20;
+  private popupPanel: Node | null = null; private popupDim: Node | null = null;
 
   async start() {
     const { cfg, stage } = this.ctx;
@@ -76,6 +88,8 @@ export class LuckyWheel extends Game {
     this.cfg = cfg; this.T = cfg.texts;
     this.targets = cfg.targets; this.segs = cfg.segments; this.chips = cfg.chips;
     this.st = await this.ctx.api.wheelState();
+    this.betSecs = this.st.timing.betSeconds;
+    this.ctx.loader?.set(0.12);
     this.syncClock(this.st.serverTime, Date.now(), Date.now());
 
     // custom sounds from the audio slots (anything not supplied uses a synthesized sound)
@@ -102,14 +116,15 @@ export class LuckyWheel extends Game {
     // ambient effect behind the wheel
     void spawnMedia(stage, this.A('fxIdle'), { w: 720, h: 720, y: this.wy, fit: 'contain', name: 'fxIdle' });
 
-    await this.buildWheel(stage);
-    await this.buildTopBar(stage);
-    await this.buildBoxes(stage);
-    await this.buildRibbon(stage);
-    await this.buildBottom(stage);
+    const L = this.ctx.loader;
+    await this.buildWheel(stage); L?.set(0.5);
+    await this.buildTopBar(stage); L?.set(0.65);
+    await this.buildBoxes(stage); L?.set(0.8);
+    await this.buildRibbon(stage); L?.set(0.88);
+    await this.buildBottom(stage); L?.set(1);
     this.statusLabel = label(stage, '', 24, theme.text, { y: this.bot + 452, w: 600, h: 34, outline: { c: '#000000aa', w: 4 } });
-    const m = stage.getChildByName('wheel')!; m.setScale(0.85, 0.85, 1);
-    tween(m).to(0.6, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start();
+    const m = stage.getChildByName('wheel')!; m.setScale(0.8, 0.8, 1);
+    tween(m).to(0.8, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start();
   }
 
   private async buildWheel(stage: Node) {
@@ -143,8 +158,38 @@ export class LuckyWheel extends Game {
       hub.node.getComponent(UITransform)!.setContentSize(hd, hd);
       hub.node.setPosition(ox, oy, 0);
     }
+    this.hubR = this.discR * 0.53;
     this.hubLabel = label(wheel, '', 44, '#ffffff', { x: ox, y: oy - 1, outline: { c: '#5a2d00', w: 5 } });
     wheel.on(Node.EventType.TOUCH_END, () => { Sfx.unlock(); });
+
+    // ---- life (does not change the artwork): sunburst rays, breathing glow, motion ghost, countdown ring, gem glint ----
+    const { theme } = this.ctx;
+    const raysFrame = cached('rays:' + theme.secondary, 512, 512, (gg) => {
+      gg.translate(256, 256);
+      for (let i = 0; i < 14; i++) {
+        gg.save(); gg.rotate((i / 14) * Math.PI * 2);
+        const lg = gg.createLinearGradient(0, 0, 250, 0);
+        lg.addColorStop(0, 'rgba(255,255,255,.55)'); lg.addColorStop(1, 'rgba(255,255,255,0)');
+        gg.fillStyle = lg; gg.beginPath(); gg.moveTo(0, 0); gg.lineTo(252, -34); gg.lineTo(252, 34); gg.closePath(); gg.fill(); gg.restore();
+      }
+    }, 1);
+    const rays = sprite(wheel, raysFrame, this.discR * 4.2, this.discR * 4.2, ox, oy, hex(theme.secondary), 'rays');
+    ensureOpacity(rays).opacity = 70;
+    tween(rays).repeatForever(tween().by(80, { angle: -360 })).start();
+    const breath = sprite(wheel, Tex.glow(), fsz.width * 1.3, fsz.height * 1.2, 0, 0, hex(theme.primary), 'breath');
+    tween(ensureOpacity(breath)).repeatForever(tween().to(2.2, { opacity: 90 }, { easing: 'sineInOut' }).to(2.2, { opacity: 210 }, { easing: 'sineInOut' })).start();
+    const sd = this.disc.getComponent(Sprite)?.spriteFrame;
+    if (sd) {
+      const gh = mk('ghost', wheel, ox, oy, this.discR * 2, this.discR * 2);
+      const gs = gh.addComponent(Sprite); gs.sizeMode = Sprite.SizeMode.CUSTOM; gs.spriteFrame = sd;
+      ensureOpacity(gh).opacity = 0; this.ghost = gh;
+    }
+    rays.setSiblingIndex(0); breath.setSiblingIndex(1); if (this.ghost) this.ghost.setSiblingIndex(2); this.disc.setSiblingIndex(3);
+    const rn = mk('ring', wheel, ox, oy);
+    this.ring = rn.addComponent(Graphics);
+    this.gemLocalY = fsz.height * 0.405;
+    this.gemGlow = sprite(wheel, Tex.glow(), 150, 150, 0, this.gemLocalY, hex('#e9d5ff'), 'gemglow');
+    tween(ensureOpacity(this.gemGlow)).repeatForever(tween().to(1.3, { opacity: 50 }, { easing: 'sineInOut' }).to(1.3, { opacity: 150 }, { easing: 'sineInOut' })).start();
   }
 
   /** Wedge colors when a buyer's disc art is missing (keeps the game playable). */
@@ -173,9 +218,11 @@ export class LuckyWheel extends Game {
 
   private async buildTopBar(stage: Node) {
     const { theme } = this.ctx;
+    let bi = 0;
     const mkBtn = async (slot: string, x: number, y: number, size: number, fn: () => void) => {
       const n = await spawnSprite(stage, this.A(slot), size, size, x, y);
       if (!n) return null;
+      n.setScale(0, 0, 1); tween(n).delay(0.25 + 0.07 * bi++).to(0.4, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start();
       n.on(Node.EventType.TOUCH_START, () => n.setScale(0.9, 0.9, 1));
       n.on(Node.EventType.TOUCH_CANCEL, () => n.setScale(1, 1, 1));
       n.on(Node.EventType.TOUCH_END, () => { n.setScale(1, 1, 1); Sfx.unlock(); Sfx.click(); fn(); });
@@ -214,11 +261,14 @@ export class LuckyWheel extends Game {
       await spawnSprite(node, t.icon, bh * 0.56, bh * 0.56, -bw * 0.2, 2, 'contain', 'icon');
       await spawnSprite(node, t.badge, bw * 0.34, bh * 0.3, bw * 0.19, 2, 'contain', 'badge');
       const mine = label(node, '0', 20, '#ffffff', { y: -bh * 0.33, outline: { c: '#00000099', w: 3 } });
-      const chipIcon = sprite(node, Tex.coin(theme.secondary), 24, 24, -bw * 0.28, -bh * 0.33, undefined, 'mc'); chipIcon.active = false;
+      const stack = mk('stack', node, -bw * 0.34, -bh * 0.24);
       node.on(Node.EventType.TOUCH_START, () => node.setScale(0.97, 0.97, 1));
       node.on(Node.EventType.TOUCH_CANCEL, () => node.setScale(1, 1, 1));
       node.on(Node.EventType.TOUCH_END, () => { node.setScale(1, 1, 1); Sfx.unlock(); void this.placeBet(t.id); });
-      this.boxes.set(t.id, { node, w: bw, h: bh, pot, mine, glow, chipIcon });
+      this.boxes.set(t.id, { node, w: bw, h: bh, pot, mine, glow, stack, lastCount: 0 });
+      node.setPosition(x, y - 90, 0); ensureOpacity(node).opacity = 0;
+      tween(node).delay(0.35 + i * 0.1).to(0.5, { position: new Vec3(x, y, 0) }, { easing: 'backOut' }).start();
+      tween(ensureOpacity(node)).delay(0.35 + i * 0.1).to(0.3, { opacity: 255 }).start();
     }));
   }
 
@@ -260,6 +310,8 @@ export class LuckyWheel extends Game {
     await Promise.all(this.chips.map(async (c, i) => {
       const node = mk('chip' + i, stage, x0 + i * step, this.bot + 88, size, size);
       const glow = sprite(node, Tex.glow(), size * 1.6, size * 1.6, 0, 0, hex(theme.secondary), 'glow'); glow.active = false;
+      tween(ensureOpacity(glow)).repeatForever(tween().to(0.6, { opacity: 130 }, { easing: 'sineInOut' }).to(0.6, { opacity: 255 }, { easing: 'sineInOut' })).start();
+      node.setScale(0, 0, 1); tween(node).delay(0.5 + i * 0.08).to(0.45, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start();
       const img = await spawnSprite(node, c.image, size, size, 0, 0, 'contain', 'img');
       if (!img) sprite(node, Tex.coin(theme.secondary), size * 0.9, size * 0.9, 0, 0);
       label(node, short(c.value), Math.round(size * 0.27), '#ffffff', { y: 1, outline: { c: '#1a0840', w: 4 } });
@@ -284,16 +336,20 @@ export class LuckyWheel extends Game {
     this.chipNodes.forEach((c, k) => {
       const on = k === i;
       c.glow.active = on;
+      const im = c.node.getChildByName('img');
+      if (im) { Tween.stopAllByTarget(im); im.setPosition(0, 0, 0); if (on) tween(im).repeatForever(tween().to(0.7, { position: new Vec3(0, 5, 0) }, { easing: 'sineInOut' }).to(0.7, { position: new Vec3(0, 0, 0) }, { easing: 'sineInOut' })).start(); }
       Tween.stopAllByTarget(c.node);
       tween(c.node).to(0.15, { position: new Vec3(c.node.position.x, on ? this.bot + 104 : this.bot + 88, 0), scale: on ? new Vec3(1.12, 1.12, 1) : new Vec3(1, 1, 1) }, { easing: 'backOut' }).start();
     });
-    void sound;
+    if (sound) this.ctx.fx.burst({ x: this.chipNodes[i].node.position.x, y: this.bot + 100, count: 6, shape: 'spark', colors: [this.ctx.theme.secondary, '#ffffff'], speed: [60, 180], gravity: 0, life: [0.3, 0.6], size: [0.4, 0.9] });
   }
 
   private showBalance(v: number, animate: boolean) {
     if (!this.balLabel) return;
-    this.balLabel.string = fmtNum(v);
-    if (animate) { this.balLabel.node.setScale(1.2, 1.2, 1); tween(this.balLabel.node).to(0.3, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start(); }
+    const from = this.shownBal; this.shownBal = v;
+    if (!animate || from === v) { this.balLabel.string = fmtNum(v); return; }
+    void countTo(this.balLabel, from, v, clamp(0.35 + Math.abs(v - from) / 4_000_000, 0.35, 1.2), fmtNum);
+    this.balLabel.node.setScale(1.2, 1.2, 1); tween(this.balLabel.node).to(0.35, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start();
   }
 
   // ------------------------------------------------------------------ state sync
@@ -316,11 +372,13 @@ export class LuckyWheel extends Game {
   private applyState(st: WheelState) {
     const r = st.round;
     if (r.no !== this.roundNo) this.onNewRound(st);
-    this.roundLabel.string = `${this.T.roundLabel}: ${r.no}`;
+    const rl = `${this.T.roundLabel}: ${r.no}`;
+    if (this.roundLabel.string !== rl) { this.roundLabel.string = rl; this.roundLabel.node.setScale(1.25, 1.25, 1); tween(this.roundLabel.node).to(0.35, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start(); }
     // pot / my bets
     for (const t of this.targets) {
       const b = this.boxes.get(t.id); if (!b) continue;
-      b.pot.string = fmtNum(st.pot[t.id] ?? 0);
+      const nv = st.pot[t.id] ?? 0, ov = this.boxPot.get(t.id) ?? 0;
+      if (nv !== ov) { this.boxPot.set(t.id, nv); void countTo(b.pot, ov, nv, 0.5, fmtNum); }
       if (!this.inflight) { this.mine[t.id] = st.mine[t.id] ?? 0; }
       this.refreshBox(t.id);
     }
@@ -333,7 +391,8 @@ export class LuckyWheel extends Game {
     if (this.roundNo && Object.values(this.mine).some(v => v > 0)) this.lastBets = { ...this.mine };
     this.roundNo = st.round.no;
     this.mine = {}; this.lastSeg = -1;
-    this.boxes.forEach(b => { b.glow.active = false; Tween.stopAllByTarget(b.glow); });
+    this.boxes.forEach(b => { b.glow.active = false; Tween.stopAllByTarget(b.glow); b.stack.setScale(1, 1, 1); ensureOpacity(b.stack).opacity = 255; b.stack.setPosition(-b.w * 0.34, -b.h * 0.24, 0); });
+    this.hubLabel.color = hex('#ffffff');
     if (this.wedge) { this.wedge.destroy(); this.wedge = null; }
     // the wheel is at rest at its last angle; remember it as the start of the next spin
     this.spinFrom = ((this.rot % 360) + 360) % 360;
@@ -343,8 +402,22 @@ export class LuckyWheel extends Game {
     const b = this.boxes.get(id); if (!b) return;
     const v = this.mine[id] ?? 0;
     b.mine.string = v > 0 ? fmtNum(v) : '0';
-    b.chipIcon.active = v > 0;
-    b.mine.node.setPosition(v > 0 ? 8 : 0, b.mine.node.position.y, 0);
+    b.mine.node.setPosition(v > 0 ? 14 : 0, b.mine.node.position.y, 0);
+    // a stack of chips that grows with the bet
+    const minChip = this.chips[0]?.value || 1;
+    const count = v > 0 ? clamp(Math.ceil(Math.log2(v / minChip + 1)), 1, 6) : 0;
+    if (count === b.lastCount) return;
+    const grew = count > b.lastCount;
+    b.lastCount = count;
+    b.stack.removeAllChildren();
+    if (!count) return;
+    let ci = 0; this.chips.forEach((c, k) => { if (c.value <= v) ci = k; });
+    const frame = this.chipNodes[ci]?.node.getChildByName('img')?.getComponent(Sprite)?.spriteFrame ?? Tex.coin(this.ctx.theme.secondary);
+    for (let k = 0; k < count; k++) {
+      const n = mk('c', b.stack, (k % 2) * 3 - 1.5, k * 6, 38, 38);
+      const sp = n.addComponent(Sprite); sp.sizeMode = Sprite.SizeMode.CUSTOM; sp.spriteFrame = frame;
+      if (grew && k === count - 1) popIn(n, 0.35, 0.3);
+    }
   }
 
   // ------------------------------------------------------------------ frame loop
@@ -355,28 +428,50 @@ export class LuckyWheel extends Game {
     const r = this.st.round, now = this.now();
     const phase = now < r.betEnd ? 'betting' : now < r.spinEnd ? 'spinning' : 'result';
 
-    // countdown in the hub
+    // countdown in the hub: number + a draining ring that turns red in the last seconds
     if (phase === 'betting') {
       const left = Math.max(0, Math.ceil((r.betEnd - now) / 1000));
+      const urgent = left <= 5;
       if (this.hubLabel.string !== String(left)) {
         this.hubLabel.string = String(left);
-        if (left <= 5 && left > 0) { Sfx.tick(); this.hubLabel.node.setScale(1.3, 1.3, 1); tween(this.hubLabel.node).to(0.25, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start(); }
+        this.hubLabel.color = urgent ? hex('#ffe0e0') : hex('#ffffff');
+        if (urgent && left > 0) { Sfx.tick(); this.hubLabel.node.setScale(1.35, 1.35, 1); tween(this.hubLabel.node).to(0.3, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start(); }
       }
-      this.statusLabel.string = this.T.placeBets;
+      this.drawRing(clamp((r.betEnd - now) / (Math.max(1, this.betSecs) * 1000), 0, 1), urgent);
+      this.setStatus(this.T.placeBets);
     } else {
       if (this.hubLabel.string !== '') this.hubLabel.string = '';
-      this.statusLabel.string = phase === 'spinning' ? this.T.noMoreBets : '';
+      if (this.lastPhase === 'betting') { this.ripple(); this.ring.clear(); }
+      this.setStatus(phase === 'spinning' ? this.T.noMoreBets : '');
     }
+    this.lastPhase = phase;
+
+    // ambient life: drifting motes and a glint on the top gem
+    this.moteAcc += dt; this.gemAcc += dt;
+    if (this.moteAcc > 0.55) { this.moteAcc = 0; this.ctx.fx.burst({ x: rand(-310, 310), y: this.wy + rand(-230, 280), count: 1, shape: 'spark', colors: [this.ctx.theme.secondary, '#ffffff'], speed: [8, 30], angle: [60, 120], gravity: -4, life: [2.2, 3.6], size: [0.35, 0.8], drag: 0.1 }); }
+    if (this.gemAcc > 3.4) { this.gemAcc = 0; this.ctx.fx.burst({ x: rand(-26, 26), y: this.wy + this.gemLocalY + rand(-14, 14), count: 4, shape: 'spark', colors: ['#ffffff', '#e9d5ff'], speed: [20, 90], gravity: 0, life: [0.4, 0.8], size: [0.5, 1.1] }); }
 
     // spin
     if (phase !== 'betting' && r.result) {
       if (this.spinFor !== r.no) this.prepareSpin(r.no, r.result.segment);
       const p = Math.min(1, Math.max(0, (now - r.betEnd) / (r.spinEnd - r.betEnd)));
-      const e = 1 - Math.pow(1 - p, 4);
-      this.setRot(this.spinFrom + this.spinTotal * e);
-      if (this.lastSeg === -1 && p < 0.02) Sfx.playCustom('spin') || Sfx.whoosh();
+      const W = 0.06;                                   // anticipation: a small backward swing before take-off
+      let rot: number, speed = 0;
+      if (p < W) rot = this.spinFrom - 11 * Math.sin(Math.PI * p / W);
+      else {
+        const q = (p - W) / (1 - W);
+        rot = this.spinFrom + this.spinTotal * (1 - Math.pow(1 - q, 4));
+        if (q > 0.93) rot += 2.4 * Math.sin(Math.PI * (q - 0.93) / 0.07);   // settle nudge at the end
+        speed = Math.pow(1 - q, 3);
+      }
+      this.setRot(rot);
+      if (this.ghost) { ensureOpacity(this.ghost).opacity = Math.round(150 * Math.min(1, speed * 1.4)); this.ghost.angle = this.disc.angle + 7 * speed; }
+      if (this.lastSeg === -1 && p < 0.02) { Sfx.playCustom('spin') || Sfx.whoosh(); this.spinBurst(); }
       const idx = this.segUnderPointer();
-      if (idx !== this.lastSeg) { if (this.lastSeg !== -1 && p < 0.97) Sfx.playCustom('tick', 0.6) || Sfx.tick(); this.lastSeg = idx; }
+      if (idx !== this.lastSeg) {
+        if (this.lastSeg !== -1 && p < 0.97) { Sfx.playCustom('tick', 0.6) || Sfx.tick(); this.pulseGem(speed); }
+        this.lastSeg = idx;
+      }
     }
     if (phase === 'result' && r.result && this.resultDone !== r.no) { this.resultDone = r.no; this.onResult(); }
     if (phase === 'result' && r.summary && this.summaryDone !== r.no) { this.summaryDone = r.no; void this.onSummary(); }
@@ -399,6 +494,80 @@ export class LuckyWheel extends Game {
     const from = ((this.rot % 360) + 360) % 360;
     this.spinFrom = from;
     this.spinTotal = (5 + (no % 2)) * 360 + (((target - from) % 360) + 360) % 360;
+  }
+
+  // ------------------------------------------------------------------ motion helpers
+  private setStatus(text: string) {
+    if (this.statusLabel.string === text) return;
+    this.statusLabel.string = text;
+    const op = ensureOpacity(this.statusLabel.node); Tween.stopAllByTarget(op); op.opacity = 0;
+    tween(op).to(0.25, { opacity: 255 }).start();
+  }
+  private drawRing(frac: number, urgent: boolean) {
+    const g = this.ring, rad = this.hubR * 0.5 + 10;
+    g.clear();
+    g.lineCap = Graphics.LineCap.ROUND;
+    g.lineWidth = 9; g.strokeColor = new Color(0, 0, 0, 90); g.circle(0, 0, rad); g.stroke();
+    if (frac <= 0.001) return;
+    g.lineWidth = 7; g.strokeColor = urgent ? hex('#ff5d5d') : hex(this.ctx.theme.secondary);
+    g.arc(0, 0, rad, Math.PI / 2, Math.PI / 2 - frac * Math.PI * 2, true); g.stroke();
+  }
+  /** Expanding ring when betting closes. */
+  private ripple() {
+    const wheel = this.disc.parent!;
+    const n = sprite(wheel, Tex.glow(), this.hubR * 1.4, this.hubR * 1.4, this.disc.position.x, this.disc.position.y, hex(this.ctx.theme.secondary), 'ripple');
+    const op = ensureOpacity(n); op.opacity = 230;
+    tween(n).to(0.7, { scale: new Vec3(4.5, 4.5, 1) }, { easing: 'quadOut' }).call(() => n.destroy()).start();
+    tween(op).to(0.7, { opacity: 0 }).start();
+  }
+  private spinBurst() {
+    this.ctx.fx.burst({ x: this.disc.parent!.position.x + this.disc.position.x, y: this.wy + this.disc.position.y, count: 26, shape: 'spark', colors: [this.ctx.theme.secondary, '#ffffff'], speed: [200, 520], gravity: 0, life: [0.4, 0.8], size: [0.6, 1.4] });
+  }
+  /** The top gem flashes each time a wedge passes it. */
+  private pulseGem(speed: number) {
+    const g = this.gemGlow; if (!g) return;
+    Tween.stopAllByTarget(g);
+    g.setScale(1.7, 1.7, 1); tween(g).to(0.16, { scale: new Vec3(1, 1, 1) }, { easing: 'quadOut' }).start();
+    if (speed > 0.12) this.ctx.fx.burst({ x: 0, y: this.wy + this.gemLocalY - 6, count: 2, shape: 'spark', colors: ['#ffffff', this.ctx.theme.secondary], speed: [60, 200], angle: [200, 340], gravity: 300, life: [0.25, 0.5], size: [0.3, 0.7] });
+  }
+  /** The winning symbol pops out of the wheel, then flies into the history ribbon. */
+  private async popResultIcon(hits: string[]) {
+    const { theme, uiLayer } = this.ctx;
+    const t = this.targets.find(x => x.id === hits[0]); if (!t) return;
+    const n = await spawnSprite(uiLayer, t.icon, 170, 170, 0, this.wy + 20, 'contain', 'resicon'); if (!n) return;
+    const name = hits.map(h => this.targets.find(x => x.id === h)?.label ?? h).join(' + ');
+    const mult = this.targets.find(x => x.id === hits[0])?.multiplier ?? 0;
+    const lb = label(uiLayer, `${name}  x${mult}`, 34, theme.secondary, { y: this.wy - 122, outline: { c: '#2a0a5a', w: 5 } });
+    const nop = ensureOpacity(n), lop = ensureOpacity(lb.node); nop.opacity = 0; lop.opacity = 0;
+    n.setScale(0.2, 0.2, 1); lb.node.setScale(0.6, 0.6, 1);
+    tween(n).to(0.5, { scale: new Vec3(1.5, 1.5, 1) }, { easing: 'backOut' }).start();
+    tween(nop).to(0.2, { opacity: 255 }).start();
+    tween(lb.node).to(0.4, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start(); tween(lop).to(0.25, { opacity: 255 }).start();
+    await wait(1.2);
+    if (!n.isValid) return;
+    tween(lop).to(0.3, { opacity: 0 }).call(() => lb.node.destroy()).start();
+    tween(n).to(0.5, { position: new Vec3(-252, this.bot + 382, 0), scale: new Vec3(0.3, 0.3, 1) }, { easing: 'quadInOut' }).call(() => n.destroy()).start();
+    tween(nop).delay(0.3).to(0.2, { opacity: 0 }).start();
+  }
+  /** Winning stacks fly to the balance as coins; losing stacks fade away. */
+  private settleStacks(hits: string[]) {
+    const { theme, fx } = this.ctx;
+    this.boxes.forEach((b, id) => {
+      if (b.lastCount === 0) return;
+      if (hits.includes(id)) {
+        const px = b.node.position.x, py = b.node.position.y;
+        for (let k = 0; k < 7; k++) {
+          const c = sprite(this.ctx.uiLayer, Tex.coin(theme.secondary), 34, 34, px - b.w * 0.3 + rand(-14, 14), py + rand(-10, 10), undefined, 'flycoin');
+          c.setScale(0, 0, 1);
+          tween(c).delay(k * 0.07).to(0.15, { scale: new Vec3(1, 1, 1) }).to(0.7, { position: new Vec3(-190, this.bot + 62, 0), scale: new Vec3(0.6, 0.6, 1) }, { easing: 'quadIn' }).call(() => { c.destroy(); if (k % 3 === 0) Sfx.coin(); }).start();
+        }
+        fx.burst({ x: px, y: py, count: 8, shape: 'star', colors: [theme.secondary, '#ffffff'], speed: [100, 300], gravity: 200, life: [0.4, 0.8] });
+        tween(b.stack).to(0.25, { scale: new Vec3(1.25, 1.25, 1) }).to(0.3, { scale: new Vec3(0, 0, 1) }).start();
+      } else {
+        tween(b.stack).to(0.5, { position: new Vec3(b.stack.position.x, b.stack.position.y - 18, 0) }).start();
+        tween(ensureOpacity(b.stack)).to(0.5, { opacity: 0 }).start();
+      }
+    });
   }
 
   // ------------------------------------------------------------------ result
@@ -425,7 +594,8 @@ export class LuckyWheel extends Game {
     });
     const lucky = r.hits.some(h => this.targets.find(t => t.id === h)?.lucky);
     this.ctx.fx.burst({ x: 0, y: 150, count: lucky ? 50 : 22, shape: 'spark', colors: [this.ctx.theme.secondary, '#ffffff'], speed: [150, 520], gravity: 0, life: [0.5, 1], size: [0.8, 1.6] });
-    if (r.hits.length > 1) toast(this.ctx.uiLayer, `${r.hits.map(h => this.targets.find(t => t.id === h)?.label ?? h).join(' + ')}`, this.ctx.theme);
+    void this.popResultIcon(r.hits);
+    this.settleStacks(r.hits);
   }
 
   private async onSummary() {
@@ -478,6 +648,7 @@ export class LuckyWheel extends Game {
     this.ribbonRow.removeAllChildren();
     const items = h.slice(0, 9);
     const step = 58, x0 = -252;
+    if (!first) { Tween.stopAllByTarget(this.ribbonRow); this.ribbonRow.setPosition(-step, 4, 0); tween(this.ribbonRow).to(0.4, { position: new Vec3(0, 4, 0) }, { easing: 'quadOut' }).start(); }
     await Promise.all(items.map(async (it, i) => {
       const t = this.targets.find(x => x.id === it.hits[0]);
       const n = await spawnSprite(this.ribbonRow, t?.icon, 46, 46, x0 + i * step, 0, 'contain', 'h');
@@ -563,10 +734,16 @@ export class LuckyWheel extends Game {
     }), tw, 60, 0, h / 2 + 2);
     label(panel, title, 28, '#2a0a5a', { y: h / 2 + 4, bold: true });
     popIn(panel, 0.3, 0.7);
-    this.popup = root;
+    this.popup = root; this.popupPanel = panel; this.popupDim = dim;
     return panel;
   }
-  private closePopup() { if (this.popup?.isValid) this.popup.destroy(); this.popup = null; }
+  private closePopup() {
+    const root = this.popup, panel = this.popupPanel, dim = this.popupDim;
+    this.popup = null; this.popupPanel = null; this.popupDim = null;
+    if (!root?.isValid) return;
+    if (panel?.isValid) tween(panel).to(0.16, { scale: new Vec3(0.88, 0.88, 1) }).start();
+    if (dim?.isValid) tween(ensureOpacity(dim)).to(0.16, { opacity: 0 }).call(() => { if (root.isValid) root.destroy(); }).start(); else root.destroy();
+  }
 
   private openHowTo() {
     const lines: string[] = this.T.howToPlay ?? [];

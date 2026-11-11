@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Db, tx } from './db.js';
 import { GAMES, gameBySlug, sanitizeConfig, fillAssetDefaults } from './catalog.js';
-import { wheelState, placeBets, myBets, ranking, settleDue } from './wheel.js';
+import { wheelState, placeBets, myBets, ranking, settleDue, pruneRounds } from './wheel.js';
 import { checkPassword, deepMerge, hashPassword, rid, sha256, sign, verify } from './util.js';
 
 export interface AppOpts {
@@ -82,14 +82,13 @@ export async function buildApp(o: AppOpts) {
     if (Array.isArray(cfg.segments)) cfg.segments = cfg.segments.map((x: any) => ({ target: x.target }));
     return cfg;
   };
-  const userView = (u: Row) => ({ id: u.id, email: u.email, balance: u.balance });
+  const userView = (u: Row) => ({ id: u.id, email: u.email, balance: u.balance, hasApiKey: !!u.api_key_hash, apiKeyPrefix: u.api_key_prefix ?? null });
   const licenseView = (l: Row) => ({
-    id: l.id, name: l.name, game: l.game_slug, keyPrefix: l.key_prefix, status: l.status,
+    id: l.id, gameId: l.id, name: l.name, game: l.game_slug, status: l.status,
     allowedOrigins: l.allowed_origins ? l.allowed_origins.split(',') : [], createdAt: l.created_at, price: l.price,
-    retired: !gameBySlug(l.game_slug),
   });
   const playerView = (p: Row) => ({ id: p.id, username: p.username, balance: p.balance });
-  const newKey = () => 'mgk_' + rid('', 32);
+  const newKey = () => 'mgs_' + rid('', 32);
 
   const authUser = (req: FastifyRequest, reply: FastifyReply): Row | null => {
     const t = verify<{ t: string; uid: string }>(bearer(req), secret);
@@ -113,11 +112,13 @@ export async function buildApp(o: AppOpts) {
     if (q.get('SELECT id FROM users WHERE email = ?', e)) return fail(reply, 409, 'This email is already registered');
     const { salt, hash } = hashPassword(password);
     const id = rid('usr_');
+    const apiKey = newKey();
     tx(db, () => {
-      q.run('INSERT INTO users (id,email,pass_salt,pass_hash,balance,created_at) VALUES (?,?,?,?,?,?)', id, e, salt, hash, SIGNUP_CREDITS, now());
+      q.run('INSERT INTO users (id,email,pass_salt,pass_hash,balance,created_at,api_key_hash,api_key_prefix) VALUES (?,?,?,?,?,?,?,?)', id, e, salt, hash, SIGNUP_CREDITS, now(), sha256(apiKey), apiKey.slice(0, 12));
       q.run('INSERT INTO wallet_tx (user_id,delta,reason,created_at) VALUES (?,?,?,?)', id, SIGNUP_CREDITS, 'Welcome demo credits', now());
     });
-    return { token: sign({ t: 'u', uid: id }, secret, 7 * 86400), user: userView(q.get('SELECT * FROM users WHERE id = ?', id)!) };
+    // the key is shown once; only its hash is stored
+    return { token: sign({ t: 'u', uid: id }, secret, 7 * 86400), user: userView(q.get('SELECT * FROM users WHERE id = ?', id)!), apiKey };
   });
   app.post('/api/auth/login', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { email, password } = (req.body ?? {}) as any;
@@ -128,6 +129,17 @@ export async function buildApp(o: AppOpts) {
   app.get('/api/me', async (req, reply) => {
     const u = authUser(req, reply); if (!u) return;
     return { user: userView(u), transactions: q.all('SELECT delta,reason,created_at FROM wallet_tx WHERE user_id = ? ORDER BY id DESC LIMIT 20', u.id) };
+  });
+  // ---------- the ONE secret API key of the account (works for every game the account owns) ----------
+  app.get('/api/account/api-key', async (req, reply) => {
+    const u = authUser(req, reply); if (!u) return;
+    return { hasKey: !!u.api_key_hash, prefix: u.api_key_prefix ?? null };
+  });
+  app.post('/api/account/api-key', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const u = authUser(req, reply); if (!u) return;
+    const key = newKey();   // create (if the account has none) or rotate (the old key stops working immediately)
+    q.run('UPDATE users SET api_key_hash = ?, api_key_prefix = ? WHERE id = ?', sha256(key), key.slice(0, 12), u.id);
+    return { apiKey: key, prefix: key.slice(0, 12) };
   });
   app.post('/api/wallet/topup', async (req, reply) => {
     const u = authUser(req, reply); if (!u) return;
@@ -146,7 +158,6 @@ export async function buildApp(o: AppOpts) {
     const u = authUser(req, reply); if (!u) return;
     const def = gameBySlug((req.params as any).slug);
     if (!def) return fail(reply, 404, 'Unknown game');
-    const key = newKey();
     const id = rid('lic_', 7);
     try {
       tx(db, () => {
@@ -155,14 +166,15 @@ export async function buildApp(o: AppOpts) {
         const n = (q.get('SELECT COUNT(*) c FROM licenses WHERE user_id = ? AND game_slug = ?', u.id, def.slug)!.c as number) + 1;
         q.run('UPDATE users SET balance = balance - ? WHERE id = ?', def.price, u.id);
         q.run('INSERT INTO wallet_tx (user_id,delta,reason,created_at) VALUES (?,?,?,?)', u.id, -def.price, `Purchased ${def.name}`, now());
+        // key_hash/key_prefix are legacy columns (one key per account now); keep them unique placeholders
         q.run('INSERT INTO licenses (id,user_id,game_slug,name,key_hash,key_prefix,price,created_at) VALUES (?,?,?,?,?,?,?,?)',
-          id, u.id, def.slug, `${def.name} #${n}`, sha256(key), key.slice(0, 12), def.price, now());
+          id, u.id, def.slug, `${def.name} #${n}`, 'unused:' + id, '', def.price, now());
       });
     } catch (e: any) {
       if (e.message === 'INSUFFICIENT') return fail(reply, 402, 'Not enough demo credits. Top up your wallet first.');
       throw e;
     }
-    return { license: licenseView(q.get('SELECT * FROM licenses WHERE id = ?', id)!), licenseKey: key, balance: q.get('SELECT balance FROM users WHERE id = ?', u.id)!.balance };
+    return { license: licenseView(q.get('SELECT * FROM licenses WHERE id = ?', id)!), balance: q.get('SELECT balance FROM users WHERE id = ?', u.id)!.balance };
   });
 
   // ---------- buyer: my games ----------
@@ -179,7 +191,7 @@ export async function buildApp(o: AppOpts) {
   app.get('/api/licenses/:id', async (req, reply) => {
     const c = ownLicense(req, reply); if (!c) return;
     const def = gameBySlug(c.lic.game_slug);
-    if (!def) return fail(reply, 410, 'This game has been retired');
+    if (!def) return fail(reply, 404, 'Unknown game');
     return {
       license: licenseView(c.lic), game: { slug: def.slug, name: def.name, manifest: def.manifest, tech: def.tech },
       config: resolveConfig(c.lic), defaults: def.defaults, publicUrl: o.publicUrl,
@@ -188,7 +200,7 @@ export async function buildApp(o: AppOpts) {
   app.put('/api/licenses/:id/config', async (req, reply) => {
     const c = ownLicense(req, reply); if (!c) return;
     const def = gameBySlug(c.lic.game_slug);
-    if (!def) return fail(reply, 410, 'This game has been retired');
+    if (!def) return fail(reply, 404, 'Unknown game');
     const r = sanitizeConfig(def, (req.body as any)?.config);
     if (!r.ok) return fail(reply, 400, r.error);
     // merge into what the buyer already customised, so partial updates never wipe other settings
@@ -211,12 +223,6 @@ export async function buildApp(o: AppOpts) {
       q.run('UPDATE licenses SET allowed_origins = ? WHERE id = ?', list.join(','), c.lic.id);
     }
     return { license: licenseView(q.get('SELECT * FROM licenses WHERE id = ?', c.lic.id)!) };
-  });
-  app.post('/api/licenses/:id/rotate-key', async (req, reply) => {
-    const c = ownLicense(req, reply); if (!c) return;
-    const key = newKey();
-    q.run('UPDATE licenses SET key_hash = ?, key_prefix = ? WHERE id = ?', sha256(key), key.slice(0, 12), c.lic.id);
-    return { licenseKey: key, license: licenseView(q.get('SELECT * FROM licenses WHERE id = ?', c.lic.id)!) };
   });
   app.post('/api/licenses/:id/preview-session', async (req, reply) => {
     const c = ownLicense(req, reply); if (!c) return;
@@ -293,17 +299,29 @@ export async function buildApp(o: AppOpts) {
     return reply.header('Content-Type', 'text/csv').header('Content-Disposition', `attachment; filename="${kind}.csv"`).send(csv);
   });
 
-  // ---------- server-to-server: mint a play session with the SECRET license key ----------
-  app.post('/api/v1/sessions', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (req, reply) => {
+  // ---------- server-to-server (authenticated with the account API key) ----------
+  const apiAccount = (req: FastifyRequest, reply: FastifyReply): Row | null => {
     const key = bearer(req);
-    const lic = key ? q.get('SELECT * FROM licenses WHERE key_hash = ?', sha256(key)) : undefined;
-    if (!lic) return fail(reply, 401, 'Invalid license key');
-    if (lic.status !== 'active') return fail(reply, 403, 'License is not active');
-    if (!gameBySlug(lic.game_slug)) return fail(reply, 410, 'This game has been retired');
-    const { username } = (req.body ?? {}) as any;
+    const u = key && key.startsWith('mgs_') ? q.get('SELECT * FROM users WHERE api_key_hash = ?', sha256(key)) : undefined;
+    if (!u) { fail(reply, 401, 'Invalid API key. Send it as "Authorization: Bearer <your API key>".'); return null; }
+    return u;
+  };
+  /** The games this account owns (id = the value to send as gameId). */
+  app.get('/api/v1/games', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const u = apiAccount(req, reply); if (!u) return;
+    return { games: q.all('SELECT * FROM licenses WHERE user_id = ? ORDER BY created_at', u.id).map(l => ({ gameId: l.id, name: l.name, game: l.game_slug, status: l.status })) };
+  });
+  /** Create a 15-minute play session for one of the account's games. */
+  app.post('/api/v1/sessions', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const u = apiAccount(req, reply); if (!u) return;
+    const { gameId, username } = (req.body ?? {}) as any;
+    if (typeof gameId !== 'string' || !gameId) return fail(reply, 400, 'gameId is required. List yours with GET /api/v1/games or copy it from the dashboard.');
+    const lic = q.get('SELECT * FROM licenses WHERE id = ? AND user_id = ?', gameId, u.id);
+    if (!lic || !gameBySlug(lic.game_slug)) return fail(reply, 404, 'Game not found for this API key');
+    if (lic.status !== 'active') return fail(reply, 403, 'This game is not active');
     if (username !== undefined && (typeof username !== 'string' || !USERNAME_RE.test(username))) return fail(reply, 400, 'username must be 3-20 chars: letters, numbers, _ . -');
     const token = sign({ t: 's', lic: lic.id, ...(username ? { u: username } : {}) }, secret, SESSION_TTL);
-    return { sessionToken: token, playUrl: `${o.publicUrl}/g/${lic.game_slug}/?session=${token}`, expiresIn: SESSION_TTL, game: lic.game_slug };
+    return { sessionToken: token, playUrl: `${o.publicUrl}/g/${lic.game_slug}/?session=${token}`, expiresIn: SESSION_TTL, gameId: lic.id, game: lic.game_slug };
   });
 
   // ---------- player-facing API (session token / player token) ----------
@@ -350,13 +368,6 @@ export async function buildApp(o: AppOpts) {
     const c = playerCtx(req, reply); if (!c) return;
     return { player: playerView(c.p) };
   });
-  app.get('/api/play/leaderboard', async (req, reply) => {
-    const c = sessionCtx(req, reply); if (!c) return;
-    return {
-      leaderboard: q.all(`SELECT p.username, SUM(r.win) won FROM rounds r JOIN players p ON p.id = r.player_id
-                          WHERE r.license_id = ? AND p.is_preview = 0 AND r.status='done' GROUP BY p.id HAVING won > 0 ORDER BY won DESC LIMIT 10`, c.lic.id),
-    };
-  });
   app.post('/api/play/refill', async (req, reply) => {
     const c = playerCtx(req, reply); if (!c) return;
     const min = Math.min(...((c.cfg.chips as any[]) || [{ value: 1 }]).map(x => x.value));
@@ -367,7 +378,7 @@ export async function buildApp(o: AppOpts) {
 
   // ---------- Lucky Wheel (shared round clock) ----------
   const wheel = (req: FastifyRequest, reply: FastifyReply) => playerCtx(req, reply, 'lucky-wheel');
-  app.get('/api/play/wheel/state', async (req, reply) => {
+  app.get('/api/play/wheel/state', { config: { rateLimit: { max: 150, timeWindow: '1 minute' } } }, async (req, reply) => {
     const c = wheel(req, reply); if (!c) return;
     q.run('UPDATE players SET last_seen = ? WHERE id = ?', now(), c.p.id);
     return wheelState(db, c.lic.id, c.cfg, c.p, now());
@@ -392,7 +403,10 @@ export async function buildApp(o: AppOpts) {
   // settle finished rounds even when nobody is polling, so dashboards and balances stay current
   const settleTimer = setInterval(() => { try { settleDue(db, null, Date.now()); } catch { /* keep running */ } }, 2000);
   settleTimer.unref();
-  app.addHook('onClose', async () => clearInterval(settleTimer));
+  // keep the database small: idle rounds nobody bet on are dropped after a few days
+  const pruneTimer = setInterval(() => { try { pruneRounds(db, Date.now()); } catch { /* keep running */ } }, 10 * 60_000);
+  pruneTimer.unref();
+  app.addHook('onClose', async () => { clearInterval(settleTimer); clearInterval(pruneTimer); });
 
   // ---------- static: uploads, game builds (with frame-ancestors), sdk, dashboard ----------
   app.addHook('onRequest', async (req, reply) => {

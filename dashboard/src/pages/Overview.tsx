@@ -29,12 +29,12 @@ export default function Overview() {
       <Card>
         <div className="row between" style={{ marginBottom: 14 }}><h2>Your games</h2><Link to="/games" className="small">View all</Link></div>
         {list === null ? <Skeleton h={70} /> : list.length === 0 ? (
-          <Empty title="No games yet" text="Buy Lucky Wheel 77 to get your first license key. It takes a few seconds." action={<Link to="/store"><Button variant="primary">Open the store</Button></Link>} />
+          <Empty title="No games yet" text="Buy Lucky Wheel 77 to get your first game ID. It takes a few seconds." action={<Link to="/store"><Button variant="primary">Open the store</Button></Link>} />
         ) : (
           <div className="stack-sm">{list.slice(0, 4).map(l => (
             <Link key={l.id} to={`/games/${l.id}`} className="row" style={{ padding: 12, border: '1px solid var(--line)', borderRadius: 14, color: 'var(--text)' }}>
               <div className="avatar" style={{ borderRadius: 12 }}><Icon name="play" size={16} /></div>
-              <div className="grow"><b>{l.name}</b><div className="muted small mono">{l.keyPrefix}••••••••</div></div>
+              <div className="grow"><b>{l.name}</b><div className="muted small mono">{l.gameId}</div></div>
               <Badge tone="brand">{fmt(l.stats.players)} players</Badge><Badge>{fmt(l.stats.rounds)} rounds</Badge><Icon name="arrow" size={16} />
             </Link>))}</div>
         )}

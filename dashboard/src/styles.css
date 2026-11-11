@@ -201,3 +201,5 @@ th.sortable { cursor: pointer; user-select: none; } th.sortable:hover { color: v
 
 .phone-mock { position: relative; z-index: 1; width: min(62%, 270px); aspect-ratio: 9 / 19.5; border: 8px solid #1c1c2e; border-radius: 36px; overflow: hidden; box-shadow: 0 30px 60px -10px rgba(0,0,0,.6); animation: float 6s ease-in-out infinite; background: #000; } .phone-mock img { width: 100%; height: 100%; object-fit: cover; display: block; animation: none; filter: none; }
 .hero-art img.wheel-fallback { width: min(88%, 440px); }
+
+.side { overflow: hidden; } .side-foot { grid-template-columns: minmax(0, 1fr); min-width: 0; } .side-foot > * { min-width: 0; } .user-chip .small { white-space: nowrap; }

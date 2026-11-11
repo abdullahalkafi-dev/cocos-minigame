@@ -13,7 +13,8 @@ export interface GameCtx {
   hud: Hud;
   theme: Theme;
   vw: number;           // visible width in design units (height is always 1280)
-  vh: number;
+  vh: number;           // visible height in stage units (1280, or more on narrow screens where the stage is scaled down)
+  loader?: { set(p: number): void };
 }
 
 export abstract class Game {

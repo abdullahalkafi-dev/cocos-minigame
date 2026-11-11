@@ -4,7 +4,7 @@
  *
  *   MiniGames.mount('#game', { sessionEndpoint: '/game-session', onEvent: e => console.log(e) });
  *
- * The SDK never sees your secret license key. Your own server creates a short-lived
+ * The SDK never sees your secret API key. Your own server creates a short-lived
  * session (POST {host}/api/v1/sessions) and returns { playUrl } to this script.
  */
 (function (root) {

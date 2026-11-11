@@ -41,6 +41,10 @@ export function openDb(file = path.join(DATA_DIR, 'app.db')) {
     CREATE INDEX IF NOT EXISTS idx_rounds_license ON rounds(license_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_players_license ON players(license_id);
   `);
+  // one secret API key per ACCOUNT (hash only). Older databases get the columns added.
+  const cols = (db.prepare('PRAGMA table_info(users)').all() as any[]).map(c => c.name);
+  if (!cols.includes('api_key_hash')) { db.exec('ALTER TABLE users ADD COLUMN api_key_hash TEXT'); db.exec('ALTER TABLE users ADD COLUMN api_key_prefix TEXT'); }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_apikey ON users(api_key_hash) WHERE api_key_hash IS NOT NULL');
   return db;
 }
 export type Db = ReturnType<typeof openDb>;

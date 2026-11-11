@@ -1,5 +1,5 @@
 // Talks to the MiniGame Studio backend. The page URL carries ?session=<token>; the secret
-// license key never reaches this code.
+// API key never reaches this code.
 export interface Player { id: string; username: string; balance: number }
 export interface Bootstrap { game: string; config: any; player: Player | null; token: string | null }
 

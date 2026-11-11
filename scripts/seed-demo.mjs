@@ -13,7 +13,8 @@ async function call(method, url, token, body) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const T = (await call('POST', '/api/auth/register', null, { email, password })).token;
+const reg = await call('POST', '/api/auth/register', null, { email, password });
+const T = reg.token, apiKey = reg.apiKey;   // one API key per account
 await call('POST', '/api/wallet/topup', T);
 const looks = [
   { title: 'Lucky Wheel 77', currencyName: 'Coins' },
@@ -24,14 +25,14 @@ const out = [];
 for (const look of looks) {
   const b = await call('POST', '/api/store/lucky-wheel/buy', T);
   if (Object.keys(look).length > 2) await call('PUT', `/api/licenses/${b.license.id}/config`, T, { config: look });
-  const sess = await call('POST', '/api/v1/sessions', b.licenseKey, {});
-  out.push({ name: look.title, licenseId: b.license.id, licenseKey: b.licenseKey, playUrl: sess.playUrl });
+  const sess = await call('POST', '/api/v1/sessions', apiKey, { gameId: b.license.id });
+  out.push({ name: look.title, gameId: b.license.id, playUrl: sess.playUrl });
 }
 // players with real bets on the first copy
 const lic = out[0];
 const players = [];
 for (const u of ['ali_khan', 'sara_m', 'tom99']) {
-  const s = await call('POST', '/api/v1/sessions', lic.licenseKey, { username: u });
+  const s = await call('POST', '/api/v1/sessions', apiKey, { gameId: lic.gameId, username: u });
   const boot = await call('GET', '/api/play/bootstrap', s.sessionToken);
   players.push(boot.token);
 }
@@ -45,4 +46,4 @@ for (let round = 0; round < 2; round++) {
   }
   await sleep(st.round.endAt - st.serverTime + 800);
 }
-console.log(JSON.stringify({ base: BASE, buyerEmail: email, buyerPassword: password, games: out }, null, 2));
+console.log(JSON.stringify({ base: BASE, buyerEmail: email, buyerPassword: password, apiKey, games: out }, null, 2));

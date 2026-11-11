@@ -7,6 +7,7 @@ import Overview from './pages/Overview';
 import Store from './pages/Store';
 import MyGames from './pages/MyGames';
 import GameDetail from './pages/GameDetail';
+import ApiKeyPage from './pages/ApiKey';
 
 interface Ctx { user: any; refresh: () => Promise<void>; logout: () => void; toast: (m: string, kind?: 'ok' | 'err') => void }
 const AppCtx = createContext<Ctx>(null as any);
@@ -50,6 +51,7 @@ export default function App() {
               <NavLink to="/" end><Icon name="home" />Overview</NavLink>
               <NavLink to="/games"><Icon name="grid" />My games</NavLink>
               <NavLink to="/store"><Icon name="store" />Store</NavLink>
+              <NavLink to="/api-key"><Icon name="key" />API key</NavLink>
               <a href="/docs/" target="_blank" rel="noreferrer"><Icon name="book" />Integration guide<span className="grow" /><Icon name="external" size={14} /></a>
             </nav>
             <div className="side-foot">
@@ -79,6 +81,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Overview />} />
                 <Route path="/store" element={<Store />} />
+                <Route path="/api-key" element={<ApiKeyPage />} />
                 <Route path="/games" element={<MyGames />} />
                 <Route path="/games/:id/*" element={<GameDetail />} />
                 <Route path="*" element={<Navigate to="/" />} />

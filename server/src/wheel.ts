@@ -90,6 +90,11 @@ export function settleDue(db: Db, licenseId: string | null, now: number) {
   });
 }
 
+/** Drop settled rounds that nobody bet on once they are older than 3 days (history only needs recent ones). */
+export function pruneRounds(db: Db, now: number) {
+  q(db).run('DELETE FROM wheel_rounds WHERE settled = 1 AND spin_end < ? AND id NOT IN (SELECT DISTINCT round_id FROM wheel_bets)', now - 3 * 86400_000);
+}
+
 export type Phase = 'betting' | 'spinning' | 'result';
 export const phaseOf = (r: Row, now: number): Phase => (now < r.bet_end ? 'betting' : now < r.spin_end ? 'spinning' : 'result');
 

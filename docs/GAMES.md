@@ -30,6 +30,15 @@ Extra: when the *lucky* option (77) hits, there is a configurable chance that a 
 
 A buyer who uploads nothing gets the default artwork. A buyer can replace one asset and keep the rest.
 
+## Motion and feel (added on top of the Figma design, which is unchanged)
+
+- **Loading**: a themed loading screen with a progress bar while the scene builds.
+- **Wheel**: slowly turning sunburst and a breathing glow behind it, a glint on the top gem, a small backward wind-up before take-off, a motion ghost while it spins fast, the gem flashing on every wedge that passes, and a settle nudge when it stops.
+- **Countdown**: the hub shows the seconds with a draining ring that turns red in the last five; a ripple marks the moment betting closes.
+- **Bets**: chips fly from the rack to the box and stack up as the bet grows; pot numbers count up.
+- **Result**: the winning wedge pulses, the winning symbol pops out of the wheel with its name and multiplier and flies into the history ribbon, winning stacks turn into coins that fly to the balance, losing stacks fade away, and the balance counts up.
+- **Interface**: staggered intro, press feedback on every button, popups that scale in and out, and cross-fading status text.
+
 ## Architecture (for your technical audience)
 
 ```
@@ -54,8 +63,8 @@ A buyer who uploads nothing gets the default artwork. A buyer can replace one as
 | Backend | Node.js 24 + Fastify 5, SQLite (built-in `node:sqlite`), TypeScript |
 | Buyer dashboard | React 18 + Vite: asset studio, live phone preview, players and results |
 | Embed library | `sdk/minigames.js` (about 4 KB, no dependencies) |
-| Security | Secret license key (hashed at rest), 15-minute signed session tokens, per-license usernames, rate limits, optional allowed-site list (`frame-ancestors`), upload validation, locked-down upload serving (CSP `sandbox`, `nosniff`) |
-| Tests | 5 automated server tests (round flow and exact payout math, 300,000-round odds simulation, license isolation, customization validation, media upload safety) plus headless-browser end-to-end scripts in `scripts/` |
+| Security | One secret API key per account (hashed at rest, rotatable) plus a game ID per game, 15-minute signed session tokens, per-game usernames, rate limits, optional allowed-site list (`frame-ancestors`), upload validation, locked-down upload serving (CSP `sandbox`, `nosniff`) |
+| Tests | 5 automated server tests (round flow and exact payout math, 300,000-round odds simulation, API key and game ID isolation and rotation, customization validation, media upload safety) plus headless-browser end-to-end scripts in `scripts/` |
 
 ## Honest limits of this demo
 
