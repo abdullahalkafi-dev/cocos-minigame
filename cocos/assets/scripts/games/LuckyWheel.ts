@@ -316,7 +316,7 @@ export class LuckyWheel extends Game {
       if (!img) sprite(node, Tex.coin(theme.secondary), size * 0.9, size * 0.9, 0, 0);
       label(node, short(c.value), Math.round(size * 0.27), '#ffffff', { y: 1, outline: { c: '#1a0840', w: 4 } });
       node.on(Node.EventType.TOUCH_END, () => { Sfx.unlock(); Sfx.click(); this.selectChip(i); });
-      this.chipNodes.push({ node, glow });
+      this.chipNodes[i] = { node, glow };      // by index: images finish loading in any order
     }));
     this.selectChip(Math.max(0, this.chips.findIndex(c => c.value <= hud.balance)), false);
 
