@@ -6,6 +6,8 @@ import { rid } from '../../common/utils/crypto.js';
 import { inTransaction } from '../../infra/mongo.js';
 import type { Cache } from '../../infra/cache.js';
 import type { GameRec } from '../games/game.model.js';
+import type { GameService } from '../games/game.service.js';
+import type { WebhookService } from '../webhooks/webhook.service.js';
 import type { LedgerService } from '../ledger/ledger.service.js';
 import type { PlayerRec } from '../players/player.model.js';
 import type { PlayerRepository } from '../players/player.repository.js';
@@ -16,6 +18,7 @@ import type { WheelRoundRec } from './wheel.model.js';
 import type { WheelRepository } from './wheel.repository.js';
 
 const CONTINUOUS_GAP_MS = 3000;
+const MAX_WEBHOOK_PLAYERS = 1000;
 const IDLE_ROUND_KEEP_MS = 3 * 86400_000;
 const curKey = (gameId: string) => `wheel:cur:${gameId}`;
 const histKey = (gameId: string) => `wheel:hist:${gameId}`;
@@ -23,6 +26,7 @@ const rankKey = (gameId: string) => `wheel:rank:${gameId}`;
 
 export function createWheelService(d: {
   repo: WheelRepository; ledger: LedgerService; results: ResultService; players: PlayerRepository; cache: Cache;
+  games: GameService; webhooks: WebhookService;
 }) {
   const service = {
     /** The round that is running now. The next one is created (and the previous one paid) when time is up. */
@@ -72,6 +76,15 @@ export function createWheelService(d: {
           });
         }
         await d.results.record(rows, s);
+        // tell the buyer's server (only real players; previews are the buyer testing in the dashboard)
+        const game = await d.games.get(r.gameId);
+        const real = rows.filter(x => !x.isPreview);
+        if (game && real.length) {
+          await d.webhooks.enqueue(game.userId, r.gameId, 'round.settled', {
+            game: 'lucky-wheel', round: r.no, result: hits, playerCount: real.length, truncated: real.length > MAX_WEBHOOK_PLAYERS,
+            players: real.slice(0, MAX_WEBHOOK_PLAYERS).map(x => ({ playerId: who.get(x.playerId)!.externalId, bet: x.bet, win: x.win })),
+          }, s);
+        }
       });
       await d.cache.del(histKey(r.gameId), rankKey(r.gameId));
     },

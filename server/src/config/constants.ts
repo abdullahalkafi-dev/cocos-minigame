@@ -10,3 +10,9 @@ export const USER_TOKEN_TTL_SEC = 7 * 86400;
 export const USERNAME_RE = /^[A-Za-z0-9_.-]{3,20}$/;
 /** Cache lifetime of a game record; invalidated on every change anyway. */
 export const GAME_CACHE_TTL_SEC = 60;
+/** An id the client's own system uses for a person: letters, digits and _ . : @ - (1 to 64 characters). */
+export const PLAYER_ID_RE = /^[A-Za-z0-9_.:@-]{1,64}$/;
+export const DISPLAY_NAME_MAX = 40;
+export const AVATAR_URL_MAX = 300;
+export const MAX_AMOUNT = 1_000_000_000_000;
+export type WalletMode = 'demo' | 'managed';

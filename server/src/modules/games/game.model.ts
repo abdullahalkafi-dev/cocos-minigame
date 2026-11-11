@@ -12,6 +12,10 @@ export interface GameRec {
   config: Record<string, any>;
   allowedOrigins: string[];
   status: string;
+  /** Players may type their own name (demo, preview). Off by default: the client's server names the player. */
+  guestLogin?: boolean;
+  /** demo: starting balance + free refill. managed: balance only changes through the wallet API. */
+  walletMode?: 'demo' | 'managed';
   price: number;
   createdAt: number;
 }
@@ -24,6 +28,8 @@ const gameSchema = new Schema({
   config: { type: Schema.Types.Mixed, default: {} },
   allowedOrigins: { type: [String], default: [] },
   status: { type: String, default: 'active' },
+  guestLogin: { type: Boolean, default: false },
+  walletMode: { type: String, default: 'demo' },
   price: Number,
   createdAt: Number,
 }, { versionKey: false, minimize: false });

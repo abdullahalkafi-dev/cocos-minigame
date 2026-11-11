@@ -12,6 +12,8 @@ import { gameRoutes } from './modules/games/game.routes.js';
 import { uploadRoutes } from './modules/uploads/upload.routes.js';
 import { resultRoutes } from './modules/results/result.routes.js';
 import { sessionRoutes } from './modules/sessions/session.routes.js';
+import { webhookRoutes } from './modules/webhooks/webhook.routes.js';
+import { walletRoutes } from './modules/wallet/wallet.routes.js';
 import { playRoutes } from './modules/play/play.routes.js';
 import { wheelRoutes } from './modules/lucky-wheel/wheel.routes.js';
 import { systemRoutes } from './modules/system/system.routes.js';
@@ -28,9 +30,9 @@ export function createApp(c: Container) {
   app.use(express.json({ limit: '1mb' }));
 
   // buyer side (dashboard)
-  app.use(authRoutes(c), userRoutes(c), apiKeyRoutes(c), storeRoutes(c), gameRoutes(c), uploadRoutes(c), resultRoutes(c));
+  app.use(authRoutes(c), userRoutes(c), apiKeyRoutes(c), storeRoutes(c), gameRoutes(c), uploadRoutes(c), resultRoutes(c), webhookRoutes(c));
   // client's server
-  app.use(sessionRoutes(c));
+  app.use(sessionRoutes(c), walletRoutes(c));
   // the running game
   app.use(playRoutes(c), wheelRoutes(c));
   // files, health

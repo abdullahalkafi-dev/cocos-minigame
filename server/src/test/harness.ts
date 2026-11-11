@@ -19,7 +19,7 @@ export async function startHarness() {
   await Promise.all(Object.values(mongoose.models).map(m => m.init()));       // build indexes before the first request
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mgs-'));
   const cache = createMemoryCache();
-  const env = { nodeEnv: 'test', port: 0, publicUrl: 'http://x.test', dataDir: dir, uploadsDir: dir, mongoUri: '', secret: 'test-secret', publicDir: dir };
+  const env = { nodeEnv: 'test', port: 0, publicUrl: 'http://x.test', dataDir: dir, uploadsDir: dir, mongoUri: '', secret: 'test-secret', publicDir: dir, allowPrivateWebhooks: true };
   const container = createContainer(env, cache);
   const server = createApp(container).listen(0, '127.0.0.1');
   await new Promise(r => server.once('listening', r));
@@ -40,12 +40,17 @@ export async function startHarness() {
     const r = await fetch(`${base}/api/licenses/${gameId}/upload?kind=${kind}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: fd });
     return { status: r.status, body: await r.json() };
   };
-  const buyer = async (email = 'b@test.com') => {
+  /** A buyer with one game. By default the game allows guest login (players type a name), like the demo; pass { guest: false } for a real client setup. */
+  const buyer = async (email = 'b@test.com', o: { guest?: boolean; wallet?: 'demo' | 'managed' } = {}) => {
     const reg = await call('POST', '/api/auth/register', undefined, { email, password: 'password123' });
     const T = reg.body.token as string;
     const apiKey = reg.body.apiKey as string;          // ONE key per account, returned once at sign-up
     const bought = await call('POST', '/api/store/lucky-wheel/buy', T);
-    const sess = await call('POST', '/api/v1/sessions', apiKey, { gameId: bought.body.license.id });
+    const settings: Record<string, unknown> = {};
+    if (o.guest ?? true) settings.guestLogin = true;
+    if (o.wallet) settings.walletMode = o.wallet;
+    if (Object.keys(settings).length) await call('PUT', `/api/licenses/${bought.body.license.id}`, T, settings);
+    const sess = await call('POST', '/api/v1/sessions', apiKey, { gameId: bought.body.license.id, ...(o.guest === false ? { playerId: 'session_probe' } : {}) });
     return { T, lic: bought.body.license.id as string, apiKey, session: sess.body.sessionToken as string };
   };
   const player = async (session: string, username: string) => (await call('POST', '/api/play/login', session, { username })).body.token as string;
@@ -59,5 +64,5 @@ export async function startHarness() {
   const ledgerSum = async (playerId: string) => (await LedgerModel.find({ playerId }).lean()).reduce((a, e) => a + e.delta, 0);
   const stop = async () => { server.close(); await cache.close(); await disconnectMongo(); await repl.stop(); };
 
-  return { container, call, upload, buyer, player, age, reset, ledgerSum, stop };
+  return { container, base, call, upload, buyer, player, age, reset, ledgerSum, stop };
 }

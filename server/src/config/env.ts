@@ -18,6 +18,8 @@ export interface Env {
   redisUrl?: string;
   /** Signs session / player / dashboard tokens. */
   secret: string;
+  /** Allow webhook URLs that point to private or local addresses (development and tests only). */
+  allowPrivateWebhooks: boolean;
   /** Folder with the built games, dashboard, SDK, docs and default artwork. */
   publicDir: string;
 }
@@ -46,6 +48,7 @@ export function loadEnv(): Env {
     mongoUri,
     redisUrl: process.env.REDIS_URL || undefined,
     secret: loadSecret(dataDir),
+    allowPrivateWebhooks: process.env.ALLOW_PRIVATE_WEBHOOKS === '1',
     publicDir: path.join(SERVER_ROOT, 'public'),
   };
 }

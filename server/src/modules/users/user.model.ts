@@ -11,6 +11,10 @@ export interface UserRec {
   /** Hash of the account's ONE secret API key (the key itself is shown once). */
   apiKeyHash?: string | null;
   apiKeyPrefix?: string | null;
+  /** Where signed event notifications are sent (one endpoint per account). */
+  webhookUrl?: string | null;
+  /** Secret the notifications are signed with (whsec_...). */
+  webhookSecret?: string | null;
   createdAt: number;
 }
 
@@ -22,6 +26,8 @@ const userSchema = new Schema({
   balance: { type: Number, default: 0 },
   apiKeyHash: { type: String, index: { unique: true, sparse: true } },
   apiKeyPrefix: String,
+  webhookUrl: String,
+  webhookSecret: String,
   createdAt: { type: Number, required: true },
 }, { versionKey: false });
 export const UserModel = model<UserRec>('User', userSchema);

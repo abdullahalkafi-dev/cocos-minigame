@@ -6,6 +6,7 @@ export const playerRepository = {
   byIds: (ids: string[]) => PlayerModel.find({ _id: { $in: ids } }).lean<PlayerRec[]>().exec(),
   byExternal: (gameId: string, externalId: string) => PlayerModel.findOne({ gameId, externalId }).lean<PlayerRec>().exec(),
   async create(rec: PlayerRec, session?: ClientSession) { await PlayerModel.create([rec], { session }); },
+  setProfile: (id: string, set: { displayName?: string; avatarUrl?: string }) => PlayerModel.updateOne({ _id: id }, { $set: set }).exec(),
   touch: (id: string, now: number) => PlayerModel.updateOne({ _id: id }, { $set: { lastSeen: now } }).exec(),
   /**
    * The only place a balance changes. Adds `delta` atomically; a negative delta returns null instead of

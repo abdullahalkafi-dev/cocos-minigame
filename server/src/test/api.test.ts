@@ -120,7 +120,7 @@ test('one account API key + game ID: isolation, errors, rotation', async () => {
   assert.equal((await call('POST', '/api/v1/sessions', a.T, { gameId: a.lic })).status, 401, 'dashboard token is not an API key');
   assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, {})).status, 400, 'gameId is required');
   assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, { gameId: c.lic })).status, 404, "cannot use someone else's game id");
-  assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, { gameId: a.lic, username: 'x' })).status, 400, 'bad username');
+  assert.equal((await call('POST', '/api/v1/sessions', a.apiKey, { gameId: a.lic, username: 'bad id!' })).status, 400, 'bad username');
   assert.equal((await call('POST', '/api/v1/sessions', 'mgs_nope', { gameId: a.lic })).body.code, 'invalid_api_key', 'errors carry a machine-readable code');
 
   // the same key serves every game of the account

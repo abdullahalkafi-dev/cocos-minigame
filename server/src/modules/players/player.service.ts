@@ -13,13 +13,22 @@ export function createPlayerService(d: { repo: PlayerRepository; ledger: LedgerS
   return {
     byId: (id: string) => d.repo.byId(id),
     byIds: (ids: string[]) => d.repo.byIds(ids),
+    byExternal: (gameId: string, externalId: string) => d.repo.byExternal(gameId, externalId),
     touch: (p: PlayerRec, now: number) => d.repo.touch(p._id, now),
 
     /** Finds the player with this external id in the game, or creates it (with the starting balance, recorded in the ledger). */
     async getOrCreate(gameId: string, externalId: string, o: NewPlayerOptions): Promise<PlayerRec> {
       const now = Date.now();
       const existing = await d.repo.byExternal(gameId, externalId);
-      if (existing) { await d.repo.touch(existing._id, now); return existing; }
+      if (existing) {
+        // the client's system is the source of truth for the name and picture: keep ours in step
+        const set: { displayName?: string; avatarUrl?: string } = {};
+        if (o.displayName && o.displayName !== existing.displayName) set.displayName = o.displayName;
+        if (o.avatarUrl && o.avatarUrl !== existing.avatarUrl) set.avatarUrl = o.avatarUrl;
+        if (Object.keys(set).length) await d.repo.setProfile(existing._id, set);
+        await d.repo.touch(existing._id, now);
+        return { ...existing, ...set, lastSeen: now };
+      }
       const rec: PlayerRec = {
         _id: rid('ply_', 8), gameId, externalId, displayName: o.displayName ?? externalId, avatarUrl: o.avatarUrl ?? null,
         balance: 0, isPreview: o.preview, createdAt: now, lastSeen: now,

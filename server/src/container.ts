@@ -18,6 +18,9 @@ import { createLedgerService } from './modules/ledger/ledger.service.js';
 import { resultRepository } from './modules/results/result.repository.js';
 import { createResultService } from './modules/results/result.service.js';
 import { createUploadService } from './modules/uploads/upload.service.js';
+import { webhookRepository } from './modules/webhooks/webhook.repository.js';
+import { createWebhookService } from './modules/webhooks/webhook.service.js';
+import { createWalletService } from './modules/wallet/wallet.service.js';
 import { createSessionService } from './modules/sessions/session.service.js';
 import { createPlayMiddleware } from './modules/play/play.middleware.js';
 import { wheelRepository } from './modules/lucky-wheel/wheel.repository.js';
@@ -35,12 +38,14 @@ export function createContainer(env: Env, cache: Cache) {
   const players = createPlayerService({ repo: playerRepository, ledger });
   const results = createResultService({ repo: resultRepository, players: playerRepository });
   const uploads = createUploadService({ uploadsDir: env.uploadsDir });
-  const sessions = createSessionService({ secret: env.secret, publicUrl: env.publicUrl, games });
-  const wheel = createWheelService({ repo: wheelRepository, ledger, results, players: playerRepository, cache });
+  const sessions = createSessionService({ secret: env.secret, publicUrl: env.publicUrl, games, players });
+  const wallet = createWalletService({ games, players, ledger });
+  const webhooks = createWebhookService({ repo: webhookRepository, users: userRepository, allowPrivate: env.allowPrivateWebhooks });
+  const wheel = createWheelService({ repo: wheelRepository, ledger, results, players: playerRepository, cache, games, webhooks });
 
   const auth = createAuthMiddleware({ auth: authSvc, apiKeys, games });
   const play = createPlayMiddleware({ sessions, games, players });
 
-  return { env, cache, limit, auth, play, users, apiKeys, authSvc, games, store, ledger, players, results, uploads, sessions, wheel };
+  return { env, cache, limit, auth, play, users, apiKeys, authSvc, games, store, ledger, players, results, uploads, sessions, wallet, webhooks, wheel };
 }
 export type Container = ReturnType<typeof createContainer>;

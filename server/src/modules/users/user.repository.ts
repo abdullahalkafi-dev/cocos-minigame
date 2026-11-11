@@ -7,6 +7,7 @@ export const userRepository = {
   byApiKeyHash: (hash: string) => UserModel.findOne({ apiKeyHash: hash }).lean<UserRec>().exec(),
   async create(rec: UserRec, session?: ClientSession) { await UserModel.create([rec], { session }); },
   setApiKey: (id: string, hash: string, prefix: string) => UserModel.updateOne({ _id: id }, { $set: { apiKeyHash: hash, apiKeyPrefix: prefix } }).exec(),
+  setWebhook: (id: string, set: { webhookUrl?: string | null; webhookSecret?: string | null }) => UserModel.updateOne({ _id: id }, { $set: set }).exec(),
   /** Adds `delta` to the demo balance. A negative delta returns null when the balance would drop below zero. */
   adjustBalance(id: string, delta: number, session?: ClientSession) {
     const filter: Record<string, unknown> = { _id: id };

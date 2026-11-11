@@ -1,4 +1,4 @@
-import { GAME_CACHE_TTL_SEC } from '../../config/constants.js';
+import { GAME_CACHE_TTL_SEC, type WalletMode } from '../../config/constants.js';
 import { badRequest, notFound } from '../../common/errors.js';
 import { clone, deepMerge } from '../../common/utils/object.js';
 import type { Cache } from '../../infra/cache.js';
@@ -42,11 +42,18 @@ export function createGameService(d: { repo: GameRepository; cache: Cache; publi
       };
       walk(cfg);
       if (Array.isArray(cfg.segments)) cfg.segments = cfg.segments.map((x: any) => ({ target: x.target }));
+      cfg.walletMode = service.playerSettings(game).walletMode;   // the game hides "free refill" when coins come from the client's wallet
       return cfg;
+    },
+    /** How players are identified and where their coins come from (see docs: identity and wallet). */
+    playerSettings: (g: GameRec) => ({ guestLogin: !!g.guestLogin, walletMode: (g.walletMode === 'managed' ? 'managed' : 'demo') as WalletMode }),
+    /** A new player's balance: the configured starting balance in demo mode, zero when the client's wallet feeds it. */
+    startingBalance(g: GameRec) {
+      return service.playerSettings(g).walletMode === 'managed' ? 0 : Number(service.resolveConfig(g).startingBalance) || 0;
     },
     view: (g: GameRec) => ({
       id: g._id, gameId: g._id, name: g.name, game: g.slug, status: g.status,
-      allowedOrigins: g.allowedOrigins ?? [], createdAt: g.createdAt, price: g.price,
+      allowedOrigins: g.allowedOrigins ?? [], createdAt: g.createdAt, price: g.price, ...service.playerSettings(g),
     }),
 
     detail(game: GameRec) {
@@ -72,8 +79,16 @@ export function createGameService(d: { repo: GameRepository; cache: Cache; publi
       return { config: service.resolveConfig({ ...game, config: merged }) };
     },
 
-    async updateSettings(game: GameRec, input: { name?: unknown; allowedOrigins?: unknown }) {
+    async updateSettings(game: GameRec, input: { name?: unknown; allowedOrigins?: unknown; guestLogin?: unknown; walletMode?: unknown }) {
       const set: Partial<GameRec> = {};
+      if (input.guestLogin !== undefined) {
+        if (typeof input.guestLogin !== 'boolean') throw badRequest('guestLogin must be true or false');
+        set.guestLogin = input.guestLogin;
+      }
+      if (input.walletMode !== undefined) {
+        if (input.walletMode !== 'demo' && input.walletMode !== 'managed') throw badRequest("walletMode must be 'demo' or 'managed'");
+        set.walletMode = input.walletMode;
+      }
       if (input.name !== undefined) {
         if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 40) throw badRequest('Name must be 1-40 characters');
         set.name = input.name.trim();

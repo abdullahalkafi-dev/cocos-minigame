@@ -21,17 +21,18 @@ export interface LedgerEntryInput {
 export function createLedgerService(d: { players: PlayerRepository; repo: LedgerRepository }) {
   return {
     /** Returns the new balance, or null when a debit would take the balance below zero. */
-    async post(e: LedgerEntryInput, session: ClientSession): Promise<{ balance: number } | null> {
+    async post(e: LedgerEntryInput, session: ClientSession): Promise<{ balance: number; id: string } | null> {
       if (!Number.isSafeInteger(e.delta) || e.delta === 0) throw new Error('Ledger delta must be a non-zero whole number');
       const p = await d.players.adjustBalance(e.playerId, e.delta, session);
       if (!p) return null;
-      await d.repo.append({
+      const id = await d.repo.append({
         gameId: e.gameId, playerId: e.playerId, delta: e.delta, balanceAfter: p.balance, kind: e.kind,
         reference: e.reference ?? null, note: e.note ?? null, createdAt: Date.now(),
       }, session);
-      return { balance: p.balance };
+      return { balance: p.balance, id };
     },
-    history: (playerId: string, limit?: number) => d.repo.forPlayer(playerId, limit),
+    history: (playerId: string, limit?: number, before?: string) => d.repo.forPlayer(playerId, limit, before),
+    byReference: (gameId: string, reference: string) => d.repo.byReference(gameId, reference),
   };
 }
 export type LedgerService = ReturnType<typeof createLedgerService>;
