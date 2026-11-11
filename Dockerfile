@@ -8,6 +8,7 @@ COPY sdk/package.json sdk/
 RUN npm ci --workspace server --workspace dashboard --workspace sdk --include-workspace-root=false
 COPY dashboard dashboard
 COPY sdk sdk
+COPY scripts/publish-dashboard.mjs scripts/publish-dashboard.mjs
 RUN npm run build -w dashboard && npm run build -w sdk
 
 # ---- runtime ----

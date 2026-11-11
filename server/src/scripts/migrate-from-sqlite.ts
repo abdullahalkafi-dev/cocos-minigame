@@ -5,6 +5,9 @@
 // Moves: buyers, their demo wallet history, games, players (with balances) and round results.
 // Does not move: the unfinished round that may have been running, which is simply lost.
 // Refuses to run if the target database already has users, so it can never overwrite live data.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { loadEnv } from '../config/env.js';
 import { connectMongo, disconnectMongo } from '../infra/mongo.js';
@@ -26,7 +29,10 @@ if (await UserModel.estimatedDocumentCount() > 0) {
 }
 await Promise.all([UserModel, WalletTxModel, GameModel, PlayerModel, LedgerModel, ResultModel].map(m => m.init()));
 
-const db = new DatabaseSync(file, { readOnly: true });
+// work on a private copy: the original (and its write-ahead log) is never opened for writing
+const work = fs.mkdtempSync(path.join(os.tmpdir(), 'mgs-migrate-'));
+for (const suffix of ['', '-wal', '-shm']) if (fs.existsSync(file + suffix)) fs.copyFileSync(file + suffix, path.join(work, 'app.db' + suffix));
+const db = new DatabaseSync(path.join(work, 'app.db'));
 const all = (sql: string) => db.prepare(sql).all() as Row[];
 
 const users = all('SELECT * FROM users');
