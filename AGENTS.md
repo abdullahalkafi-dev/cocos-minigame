@@ -59,6 +59,26 @@ npm run loadtest -w server -- --players 1000 --seconds 70   # load test
 9. **Keep files small and readable.** Prefer a new module or file over growing a large one. No clever one-liners that need a comment to decode.
 10. **Do not touch other projects** on the production server (`/opt/minigame-studio` is the only path that belongs to this project).
 
+## Before every push and deploy
+
+There is no automatic CI: nothing checks a push for you, so run these yourself.
+
+```bash
+npm test                                                  # all server tests must pass
+npm run typecheck -w server && npm run typecheck -w dashboard && npx tsc --noEmit -p cocos
+npm run build:ai-docs                                     # after changing docs/ai or the API: commit the regenerated files
+git push
+```
+
+Deploy (only this project's folder on the server, never other projects):
+
+```bash
+ssh root@<server> 'cd /opt/minigame-studio && git pull && docker compose up -d --build'
+curl https://<your-domain>/api/health                     # must answer {"ok":true,...}
+```
+
+Game changes also need `npm run build:games` (Cocos Creator) and the rebuilt files in `server/public/games` committed before the push. Details: [`docs/operations/deployment.md`](docs/operations/deployment.md).
+
 ## Definition of done
 
 - [ ] Types check (`server`, `dashboard`, `cocos`), tests pass, new behavior has a test.

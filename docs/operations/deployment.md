@@ -83,7 +83,11 @@ cd /opt/minigame-studio && git remote set-url origin git@github.com:<owner>/<rep
 GIT_SSH_COMMAND='ssh -i ~/.ssh/minigame_deploy -o IdentitiesOnly=yes' git pull
 ```
 
-(Set `core.sshCommand` in the repository's git config so a plain `git pull` uses the key.) CI (`.github/workflows/ci.yml`) runs type checks, the tests and the dashboard build on every push.
+(Set `core.sshCommand` in the repository's git config so a plain `git pull` uses the key.)
+
+## Release checklist (there is no automatic CI)
+
+Before every push: `npm test`, the three type checks (`npm run typecheck -w server`, `npm run typecheck -w dashboard`, `npx tsc --noEmit -p cocos`) and, after changing docs or the API, `npm run build:ai-docs`. After the push: `git pull && docker compose up -d --build` on the server, then the smoke test below. The same checklist is in `AGENTS.md`.
 
 ## Smoke test
 

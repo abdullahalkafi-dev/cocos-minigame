@@ -11,7 +11,6 @@ Status of the plan and what is left. Items marked **done** are built, tested and
 - **Scale** (done for one process): in-memory room hub with WebSocket push, batched resumable payouts, measured by a load test (see [operations/load-testing.md](operations/load-testing.md)).
 - **API platform** (done): OpenAPI 3.1 at `/openapi.json` (tested against the real routes), Postman collection, test/live keys and games, standard error codes.
 - **AI-friendly docs** (done): `AGENTS.md`, `docs/ai/`, `/llms.txt`, `/llms-full.txt`.
-- **CI** (done): GitHub Actions run type checks, tests, the dashboard build and check the AI bundles are current.
 
 ## Next (not built)
 

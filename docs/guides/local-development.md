@@ -33,7 +33,7 @@ Use a different database name per environment (`minigame_dev`, `minigame_studio`
 | `npm run typecheck -w server` / `-w dashboard` | Type checks |
 | `npx tsc --noEmit -p cocos` | Type check the game scripts without opening Creator |
 | `npm test` | Server tests (see [testing](testing.md)) |
-| `npm run build:ai-docs` | Regenerates `/llms.txt`, `/llms-full.txt`, `/postman.json` and `docs/ai` copies from `docs/ai` and the OpenAPI definition (CI checks they are current) |
+| `npm run build:ai-docs` | Regenerates `/llms.txt`, `/llms-full.txt`, `/postman.json` and `docs/ai` copies from `docs/ai` and the OpenAPI definition (run it after changing any doc under `docs/ai` or the OpenAPI definition, and commit the result) |
 | `npm run loadtest -w server -- --players 1000 --seconds 70` | Load test with bot players (see [load-testing](../operations/load-testing.md)) |
 | `npm run seed` | Demo data: two differently customized games with players and settled rounds (takes about a minute; **never run it against production**) |
 
