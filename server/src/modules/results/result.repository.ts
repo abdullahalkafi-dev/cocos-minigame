@@ -66,6 +66,10 @@ export const resultRepository = {
     ] } }, { $count: 'n' }]);
     return { row: mine, rank: (better[0]?.n ?? 0) + 1 };
   },
+  /** One player's finished rounds, newest first. `before` is the time (ms) of the last row of the previous page. */
+  forPlayer: (gameId: string, playerId: string, o: { limit: number; before?: number; roomId?: string }) =>
+    ResultModel.find({ gameId, playerId, isPreview: false, ...(o.roomId ? { roomId: o.roomId } : {}), ...(o.before ? { createdAt: { $lt: o.before } } : {}) })
+      .sort({ createdAt: -1 }).limit(o.limit).lean<ResultRec[]>().exec(),
   list: (gameId: string, o: { limit: number; offset: number; playerId?: string }) =>
     ResultModel.find({ ...real(gameId), ...(o.playerId ? { playerId: o.playerId } : {}) })
       .sort({ createdAt: -1 }).skip(o.offset).limit(o.limit).lean<ResultRec[]>().exec(),

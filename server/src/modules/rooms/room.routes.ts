@@ -20,7 +20,8 @@ export function roomRoutes(c: Container) {
     return g;
   };
   const base = '/api/v1/games/:gameId';
-  r.get(`${base}/rooms`, lim, c.auth.requireApiKey, async (req, res) => { res.json(await c.rooms.list(await own(req))); });
+  r.get(`${base}/rooms`, lim, c.auth.requireApiKey, async (req, res) => { res.json(await c.rooms.list(await own(req), req.query)); });
+  r.get(`${base}/rooms/:key`, lim, c.auth.requireApiKey, async (req, res) => { res.json(await c.rooms.show(await own(req), String(req.params.key))); });
   r.post(`${base}/rooms`, lim, c.auth.requireApiKey, async (req, res) => { res.json(await c.rooms.create(await own(req), req.body ?? {})); });
   r.put(`${base}/rooms/:key`, lim, c.auth.requireApiKey, async (req, res) => { res.json(await c.rooms.update(await own(req), String(req.params.key), req.body ?? {})); });
   r.delete(`${base}/rooms/:key`, lim, c.auth.requireApiKey, async (req, res) => { res.json(await c.rooms.remove(await own(req), String(req.params.key))); });
@@ -28,7 +29,7 @@ export function roomRoutes(c: Container) {
 
   // ---- dashboard
   const d = [c.auth.requireUser, c.auth.requireOwnedGame];
-  r.get('/api/licenses/:id/rooms', ...d, async (req, res) => { res.json(await c.rooms.list(req.game!)); });
+  r.get('/api/licenses/:id/rooms', ...d, async (req, res) => { res.json(await c.rooms.list(req.game!, req.query)); });
   r.post('/api/licenses/:id/rooms', ...d, async (req, res) => { res.json(await c.rooms.create(req.game!, req.body ?? {})); });
   r.put('/api/licenses/:id/rooms/:key', ...d, async (req, res) => { res.json(await c.rooms.update(req.game!, String(req.params.key), req.body ?? {})); });
   r.delete('/api/licenses/:id/rooms/:key', ...d, async (req, res) => { res.json(await c.rooms.remove(req.game!, String(req.params.key))); });

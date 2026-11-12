@@ -128,9 +128,9 @@ export function createSeamlessService(d: {
     storedCredits: (references: string[], session?: ClientSession) => d.repo.existingIds(references, session),
 
     /** Stores the payout of a win (inside the settlement transaction). The worker sends it. */
-    enqueueCredit: (g: GameRec, p: PlayerRec, amount: number, reference: string, note: string, session: ClientSession) =>
+    enqueueCredit: (g: GameRec, p: PlayerRec, amount: number, reference: string, note: string, session: ClientSession, where?: { roomId: string; round: number }) =>
       d.repo.create({
-        _id: reference, userId: g.userId, gameId: g._id, playerId: p._id, externalId: p.externalId, type: 'credit', amount, note,
+        _id: reference, userId: g.userId, gameId: g._id, playerId: p._id, externalId: p.externalId, type: 'credit', amount, note, roomId: where?.roomId ?? null, round: where?.round ?? null,
         status: 'pending', attempts: 0, nextAttemptAt: Date.now(), createdAt: Date.now(),
       }, session),
 
@@ -145,7 +145,7 @@ export function createSeamlessService(d: {
       if (r.ok) {
         if (op.type === 'credit' && r.balance !== undefined) {
           try {
-            await inTransaction(s => d.ledger.record({ gameId: op.gameId, playerId: op.playerId, delta: op.amount, kind: 'win', reference: op._id, note: op.note ?? undefined, balanceAfter: r.balance! }, s));
+            await inTransaction(s => d.ledger.record({ gameId: op.gameId, playerId: op.playerId, delta: op.amount, kind: 'win', reference: op._id, note: op.note ?? undefined, roomId: op.roomId ?? undefined, round: op.round ?? undefined, balanceAfter: r.balance! }, s));
           } catch (e) { if (!isDuplicateKey(e)) throw e; }
           d.bus.emit('balance', op.playerId, r.balance);
         }

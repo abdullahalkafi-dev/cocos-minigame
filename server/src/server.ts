@@ -5,6 +5,7 @@ import { createCache } from './infra/cache.js';
 import { connectMongo, disconnectMongo } from './infra/mongo.js';
 import { startSeamlessWorker } from './modules/seamless/seamless.worker.js';
 import { startWebhookWorker } from './modules/webhooks/webhook.worker.js';
+import { startRoomWorker } from './modules/rooms/room.worker.js';
 import { startWheelWorker } from './modules/lucky-wheel/wheel.worker.js';
 import { WheelBetModel, WheelRoundModel } from './modules/lucky-wheel/wheel.model.js';
 import { ResultModel } from './modules/results/result.model.js';
@@ -22,6 +23,7 @@ container.hub.start();
 const stopWheelWorker = startWheelWorker({ wheel: container.wheel, cache });
 const stopWebhookWorker = startWebhookWorker({ webhooks: container.webhooks, cache });
 const stopSeamlessWorker = startSeamlessWorker({ seamless: container.seamless, cache });
+const stopRoomWorker = startRoomWorker({ rooms: container.rooms, cache });
 
 const { server, sockets } = createHttpServer(container);
 server.listen(env.port, '0.0.0.0', () => {
@@ -29,7 +31,7 @@ server.listen(env.port, '0.0.0.0', () => {
 });
 
 async function shutdown() {
-  stopWheelWorker(); stopWebhookWorker(); stopSeamlessWorker();
+  stopWheelWorker(); stopWebhookWorker(); stopSeamlessWorker(); stopRoomWorker();
   container.hub.stop();
   sockets.close();
   server.close();

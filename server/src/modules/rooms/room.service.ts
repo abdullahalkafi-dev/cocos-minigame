@@ -27,6 +27,21 @@ const int = (v: unknown, lo: number, hi: number, what: string) => {
   return v;
 };
 
+/** Free notes of the client: up to 10 entries, key 1-32 characters (letters, digits, _ . -), text value up to 200 characters. */
+export function sanitizeMetadata(input: unknown): Record<string, string> {
+  if (input === undefined || input === null) return {};
+  if (typeof input !== 'object' || Array.isArray(input)) throw badRequest('metadata must be an object of text values', 'invalid_room');
+  const out: Record<string, string> = {}, entries = Object.entries(input as Record<string, unknown>);
+  if (entries.length > 10) throw badRequest('metadata can have at most 10 entries', 'invalid_room');
+  for (const [k, v] of entries) {
+    if (!/^[A-Za-z0-9_.-]{1,32}$/.test(k)) throw badRequest('metadata keys are 1-32 characters: letters, digits, _ . -', 'invalid_room');
+    if (typeof v !== 'string' || v.length > 200) throw badRequest('metadata values must be text of at most 200 characters', 'invalid_room');
+    out[k] = v;
+  }
+  return out;
+}
+const deleteAfter = (v: unknown) => (v === null ? null : int(v, 1, 10_080, 'deleteWhenEmptyMinutes'));
+
 /** Validates the overrides of a room. Anything not listed here cannot be changed per room. */
 export function sanitizeOverrides(input: unknown): RoomOverrides {
   if (input === undefined || input === null) return {};
@@ -53,10 +68,12 @@ export function sanitizeOverrides(input: unknown): RoomOverrides {
 /** Rooms of a game: creating and listing them, who is in them, and placing a player in one. */
 export function createRoomService(d: { repo: RoomRepository; cache: Cache; games: GameService }) {
   const view = async (g: GameRec, r: RoomRec) => ({
-    key: r.key, name: r.name, capacity: r.capacity, auto: r.auto, overrides: r.overrides ?? {}, createdAt: r.createdAt,
+    key: r.key, name: r.name, capacity: r.capacity, auto: r.auto, overrides: r.overrides ?? {}, metadata: r.metadata ?? {},
+    deleteWhenEmptyMinutes: r.deleteWhenEmptyMinutes ?? null, createdAt: r.createdAt,
     online: await d.cache.countPresence(presenceSet(g._id, r.key), PRESENCE_WINDOW_SEC),
   });
 
+  const lastWrite = new Map<string, number>();
   const service = {
     /** The implicit room every game has. Created the first time it is needed. */
     async main(g: GameRec): Promise<RoomRec> {
@@ -71,15 +88,26 @@ export function createRoomService(d: { repo: RoomRepository; cache: Cache; games
       return r;
     },
 
-    async createRaw(g: GameRec, o: { key: string; name: string; capacity: number | null; auto: boolean; overrides: RoomOverrides }): Promise<RoomRec> {
-      const rec: RoomRec = { _id: rid('rm_', 8), gameId: g._id, ...o, createdAt: Date.now() };
+    async createRaw(g: GameRec, o: { key: string; name: string; capacity: number | null; auto: boolean; overrides: RoomOverrides; metadata?: Record<string, string>; deleteWhenEmptyMinutes?: number | null }): Promise<RoomRec> {
+      const now = Date.now();
+      const rec: RoomRec = { _id: rid('rm_', 8), gameId: g._id, ...o, lastActiveAt: now, createdAt: now };
       await d.repo.create(rec);                                     // a lost race just means it already exists
       return (await d.repo.byKey(g._id, o.key))!;
     },
 
-    async list(g: GameRec) {
+    /** Rooms of a game, oldest first, `limit` (default 100, at most 500) at a time. */
+    async list(g: GameRec, q: { limit?: unknown; offset?: unknown } = {}) {
       await service.main(g);
-      return { rooms: await Promise.all((await d.repo.listByGame(g._id)).map(r => view(g, r))) };
+      const limit = Math.min(500, Math.max(1, Number(q.limit) || 100)), offset = Math.max(0, Number(q.offset) || 0);
+      const [rows, total] = await Promise.all([d.repo.page(g._id, offset, limit), d.repo.count(g._id)]);
+      return { rooms: await Promise.all(rows.map(r => view(g, r))), total, limit, offset };
+    },
+
+    /** One room with its player count (cheaper than the whole list). */
+    async show(g: GameRec, key: string) {
+      const r = key === MAIN_ROOM ? await service.main(g) : await service.get(g, key);
+      if (!r) throw notFound('Room not found', 'room_not_found');
+      return view(g, r);
     },
 
     async create(g: GameRec, body: Record<string, unknown>) {
@@ -91,7 +119,7 @@ export function createRoomService(d: { repo: RoomRepository; cache: Cache; games
       if (body.auto !== undefined && typeof body.auto !== 'boolean') throw badRequest('auto must be true or false', 'invalid_room');
       if ((await d.repo.count(g._id)) >= MAX_ROOMS_PER_GAME) throw conflict(`A game can have at most ${MAX_ROOMS_PER_GAME} rooms`, 'too_many_rooms');
       if (await d.repo.byKey(g._id, key)) throw conflict('A room with this key already exists', 'room_exists');
-      const rec = await service.createRaw(g, { key, name, capacity, auto: body.auto ?? true, overrides: sanitizeOverrides(body.overrides) } as any);
+      const rec = await service.createRaw(g, { key, name, capacity, auto: body.auto ?? true, overrides: sanitizeOverrides(body.overrides), metadata: sanitizeMetadata(body.metadata), deleteWhenEmptyMinutes: body.deleteWhenEmptyMinutes === undefined ? null : deleteAfter(body.deleteWhenEmptyMinutes) } as any);
       return view(g, rec);
     },
 
@@ -103,6 +131,8 @@ export function createRoomService(d: { repo: RoomRepository; cache: Cache; games
       if (body.capacity !== undefined) set.capacity = body.capacity === null ? null : int(body.capacity, 1, 1_000_000, 'capacity');
       if (body.auto !== undefined) { if (typeof body.auto !== 'boolean') throw badRequest('auto must be true or false', 'invalid_room'); set.auto = body.auto; }
       if (body.overrides !== undefined) set.overrides = sanitizeOverrides(body.overrides);
+      if (body.metadata !== undefined) set.metadata = sanitizeMetadata(body.metadata);
+      if (body.deleteWhenEmptyMinutes !== undefined) { set.deleteWhenEmptyMinutes = deleteAfter(body.deleteWhenEmptyMinutes); set.lastActiveAt = Date.now(); }
       if (Object.keys(set).length) { await d.repo.update(g._id, key, set); await d.cache.del(roomCacheKey(g._id, key)); }
       return view(g, { ...r, ...set });
     },
@@ -119,7 +149,24 @@ export function createRoomService(d: { repo: RoomRepository; cache: Cache; games
 
     online: (g: GameRec, key: string) => d.cache.countPresence(presenceSet(g._id, key), PRESENCE_WINDOW_SEC),
     /** Marks players as present in a room (the live hub and the HTTP fallback call this). */
-    touch: (gameId: string, key: string, playerIds: string[]) => d.cache.touchPresence(presenceSet(gameId, key), playerIds, PRESENCE_WINDOW_SEC),
+    touch(gameId: string, key: string, playerIds: string[]) {
+      // remember that the room was in use, for "delete when empty" (a database write at most once a minute per room)
+      if (playerIds.length) {
+        const k = presenceSet(gameId, key), now = Date.now();
+        if (now - (lastWrite.get(k) ?? 0) > 60_000) { lastWrite.set(k, now); void d.repo.setActive(gameId, key, now).catch(() => {}); }
+      }
+      return d.cache.touchPresence(presenceSet(gameId, key), playerIds, PRESENCE_WINDOW_SEC);
+    },
+
+    /** Deletes the rooms that asked to go when empty and have been empty long enough. Called by a worker. Returns how many were deleted. */
+    async cleanup(now = Date.now()) {
+      let n = 0;
+      for (const r of await d.repo.expirable(now)) {
+        if ((await d.cache.countPresence(presenceSet(r.gameId, r.key), PRESENCE_WINDOW_SEC)) > 0) continue;
+        await d.repo.remove(r.gameId, r.key); await d.cache.del(roomCacheKey(r.gameId, r.key)); lastWrite.delete(presenceSet(r.gameId, r.key)); n++;
+      }
+      return n;
+    },
 
     /**
      * Picks the room for a session: the named room (409 when it is full), or with "auto" the first auto room that has space.
@@ -144,7 +191,7 @@ export function createRoomService(d: { repo: RoomRepository; cache: Cache; games
           if ((await d.repo.count(g._id)) >= MAX_ROOMS_PER_GAME) throw conflict('Every room is full and the room limit is reached', 'no_room_available');
           const base = last.key.replace(/-\d+$/, '');
           const n = (await d.repo.listByGame(g._id)).filter(r => r.key === base || r.key.startsWith(base + '-')).length + 1;
-          room = await service.createRaw(g, { key: `${base}-${n}`.slice(0, 32), name: `${last.name.replace(/ \d+$/, '')} ${n}`.slice(0, 40), capacity: last.capacity, auto: true, overrides: last.overrides ?? {} });
+          room = await service.createRaw(g, { key: `${base}-${n}`.slice(0, 32), name: `${last.name.replace(/ \d+$/, '')} ${n}`.slice(0, 40), capacity: last.capacity, auto: true, overrides: last.overrides ?? {}, metadata: {}, deleteWhenEmptyMinutes: last.deleteWhenEmptyMinutes ?? null });
         }
       }
       // reserve the seat right away, so a burst of sessions does not all land in the same room

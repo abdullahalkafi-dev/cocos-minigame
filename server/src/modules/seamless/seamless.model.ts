@@ -17,6 +17,8 @@ export interface SeamlessOpRec {
   type: SeamlessOpType;
   amount: number;
   note?: string | null;
+  roomId?: string | null;
+  round?: number | null;
   status: 'pending' | 'done' | 'failed';
   attempts: number;
   nextAttemptAt: number;
@@ -34,6 +36,8 @@ const schema = new Schema({
   type: { type: String, required: true },
   amount: { type: Number, required: true },
   note: String,
+  roomId: String,
+  round: Number,
   status: { type: String, default: 'pending' },
   attempts: { type: Number, default: 0 },
   nextAttemptAt: { type: Number, required: true },

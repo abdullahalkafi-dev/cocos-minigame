@@ -53,7 +53,7 @@ export function createContainer(env: Env, cache: Cache) {
   const sessions = createSessionService({ secret: env.secret, publicUrl: env.publicUrl, games, players, rooms });
   const webhooks = createWebhookService({ repo: webhookRepository, users: userRepository, allowPrivate: env.allowPrivateWebhooks, secret: env.secret });
   const seamless = createSeamlessService({ repo: seamlessRepository, users: userRepository, games, webhooks, ledger, bus, allowPrivate: env.allowPrivateWebhooks, secret: env.secret });
-  const wallet = createWalletService({ games, players, ledger, bus });
+  const wallet = createWalletService({ games, players, ledger, bus, results: resultRepository });
   const wheel = createWheelService({ repo: wheelRepository, ledger, results, players: playerRepository, cache, games, webhooks, rooms, seamless });
   const hub = createWheelHub({ wheel, games, rooms, repo: wheelRepository, bus });
   wheel.attachHub(hub);

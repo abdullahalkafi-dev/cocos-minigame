@@ -146,7 +146,8 @@
     <li><b>Place a player:</b> add <code>"room"</code> to <code>POST /api/v1/sessions</code>: <code>"auto"</code> (default) puts the player in the first room with space and opens a new copy of the last one when all are full; a room key joins that room (<code>409 room_full</code> if it is full).</li>
     <li><b>Presets:</b> a room can override the chip values, the maximum bet per option and the betting/spin/result seconds. Everything else comes from the game.</li>
     <li><b>Capacity is a soft limit</b>: a few extra players can slip in while many sessions are created at the same moment.</li>
-    <li><b>Lobby:</b> <code>GET /api/v1/games/{gameId}/rooms</code> lists rooms with the number of players online, for your own lobby screen. Manage rooms with <code>POST</code>, <code>PUT</code> and <code>DELETE</code> (a room can be deleted only when empty; <code>main</code> never).</li>
+    <li><b>Rooms made by your users:</b> your server creates them (players and the game can never create rooms), for example one per user-made table: <code>POST /rooms</code> with <code>metadata</code> (your own notes such as <code>createdBy</code> or an invite code, up to 10 text values, never shown to players) and <code>deleteWhenEmptyMinutes</code> (the room is deleted after nobody has been in it that long). A game can have up to 5,000 rooms. Rooms are private by design: only your server can create a session for a room, so a room key alone gets nobody in; check your own invite code before you create the session.</li>
+    <li><b>Lobby:</b> <code>GET /api/v1/games/{gameId}/rooms?limit=100&amp;offset=0</code> lists rooms (oldest first, with <code>total</code>) and the number of players online; <code>GET /api/v1/games/{gameId}/rooms/{key}</code> returns one room. Use these for your own lobby screen. Manage rooms with <code>POST</code>, <code>PUT</code> and <code>DELETE</code> (a room can be deleted only when empty; <code>main</code> never).</li>
     <li><b>Rankings for your app:</b> <code>GET /api/v1/games/{gameId}/leaderboard?room=&amp;period=day|week|month|all&amp;metric=winnings|net|wagered|biggest_win&amp;limit=&amp;playerId=</code>. Pass <code>playerId</code> to also get that player's own rank in <code>me</code>. Periods are UTC; answers are cached for 5 seconds.</li>
   </ul>
 <pre><code>POST {{HOST}}/api/v1/games/lic_AbC123xYz/rooms
@@ -176,8 +177,8 @@ GET {{HOST}}/api/v1/games/lic_AbC123xYz/leaderboard?period=week&amp;metric=winni
     "round": 1042,
     "result": ["seven", "plum"],     // winning option codes
     "playerCount": 2,
-    "truncated": false,              // true when more than 1000 players; use /transactions for the rest
-    "players": [ { "playerId": "user-8841", "bet": 30000, "win": 240000 } ]
+    "truncated": false,              // true when more than 1000 players; use /players/{playerId}/rounds for the rest
+    "players": [ { "playerId": "user-8841", "bet": 30000, "win": 240000, "bets": [ { "option": "seven", "amount": 30000, "win": 240000 } ] } ]
   }
 }</code></pre>
   <div class="tablewrap"><table>
@@ -274,11 +275,23 @@ Content-Type: application/json
 <pre><code>200 OK
 { "playerId": "user-8841", "balance": 70000, "nextBefore": null,
   "transactions": [
-    { "id": "66f1...", "type": "win",    "amount": 240000, "balanceAfter": 310000, "reference": "win:wr_...:ply_...", "note": "Round 1042", "createdAt": 1794420600000 },
-    { "id": "66f0...", "type": "bet",    "amount": -30000,  "balanceAfter": 70000,  "reference": null, "note": "Round 1042", "createdAt": 1794420580000 },
+    { "id": "66f1...", "type": "win",    "amount": 240000, "balanceAfter": 310000, "reference": "win:wr_...:ply_...", "note": "Round 1042", "room": "main", "round": 1042, "createdAt": 1794420600000 },
+    { "id": "66f0...", "type": "bet",    "amount": -30000,  "balanceAfter": 70000,  "reference": null, "note": "Round 1042", "room": "main", "round": 1042, "createdAt": 1794420580000 },
     { "id": "66ef...", "type": "credit", "amount": 100000,  "balanceAfter": 100000, "reference": "order-1001", "note": "bought 100k coins", "createdAt": 1794420500000 }
   ] }</code></pre>
   <p><code>type</code> is one of <code>credit</code>, <code>debit</code> (from your server), <code>bet</code>, <code>win</code> (from the game), <code>starting</code>, <code>refill</code> (demo wallet).</p>
+
+  <p><code>room</code> and <code>round</code> are set on <code>bet</code> and <code>win</code> entries (otherwise <code>null</code>).</p>
+
+  <h3><span class="pill">GET</span> /api/v1/games/{gameId}/players/{playerId}/rounds?limit=50&amp;before=TIME&amp;room=KEY</h3>
+  <p>The player's <b>finished rounds</b>, newest first: the history screen of your app, with no webhooks to store. Pass <code>nextBefore</code> as <code>before</code> for the next page (it is a time in milliseconds).</p>
+<pre><code>200 OK
+{ "playerId": "user-8841", "nextBefore": null,
+  "rounds": [
+    { "game": "lucky-wheel", "room": "main", "round": 1042, "result": ["seven"], "bet": 3500, "win": 4500, "net": 1000,
+      "bets": [ { "option": "seven", "label": "7", "amount": 1500, "win": 4500 }, { "option": "plum", "label": "Plum", "amount": 2000, "win": 0 } ],
+      "time": 1794420600000 } ] }</code></pre>
+  <p><code>bets</code> adds up the stakes per option (<code>null</code> for rounds played before this field existed). <code>result</code> has more than one option when the bonus hits.</p>
 
   <h3>Errors</h3>
   <p>Every error has the same shape: <code>{ "error": "human readable message", "code": "machine_code" }</code>. Program against <code>code</code>.</p>
@@ -331,10 +344,11 @@ Content-Type: application/json
     <tr><td><code>login</code></td><td><code>{ username, balance }</code></td><td>The player is in the game (<code>username</code> is the display name)</td></tr>
     <tr><td><code>ready</code></td><td><code>{ game }</code></td><td>The game is on screen</td></tr>
     <tr><td><code>round</code></td><td><code>{ game, round, bet, win, hits, balance }</code></td><td>A round was paid. <code>hits</code> lists the winning option codes.</td></tr>
-    <tr><td><code>needCoins</code></td><td><code>{ balance }</code></td><td>Managed wallet only: the player tried to bet with too few coins. Open your own shop.</td></tr>
+    <tr><td><code>needCoins</code></td><td><code>{ balance }</code></td><td>Managed or seamless wallet: the player tapped a chip or bet they cannot afford (and the game shows its "out of coins" message). Open your own shop. The same moment is also sent to your server as the <code>player.needs_coins</code> webhook.</td></tr>
     <tr><td><code>exit</code></td><td><code>{}</code></td><td>The player pressed the back button. Close the game or navigate away.</td></tr>
     <tr><td><code>error</code></td><td><code>{ message }</code></td><td>Web SDK only: your session endpoint failed</td></tr>
   </table></div>
+  <p>There is no <code>balance</code> event: the balance is shown live by the game itself (when you <code>credit</code> a player who has the game open, it updates within a second, no reload and no message from you needed), and the <code>round</code> event carries the balance after each round.</p>
   <p>Events are for your UI (analytics, opening a shop). <b>The authoritative record is on our server</b>: use the <a href="#webhooks">webhooks</a> or the <a href="#api">transactions</a> API for anything that matters.</p>
 </section>
 

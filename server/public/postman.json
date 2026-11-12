@@ -57,7 +57,7 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"gameId\": \"{{gameId}}\",\n  \"playerId\": \"{{playerId}}\",\n  \"displayName\": \"string\",\n  \"avatarUrl\": \"string\",\n  \"room\": \"string\"\n}",
+          "raw": "{\n  \"gameId\": \"{{gameId}}\",\n  \"playerId\": \"{{playerId}}\",\n  \"displayName\": \"string\",\n  \"avatarUrl\": \"string\",\n  \"room\": \"string\",\n  \"startingBalance\": 1000\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -281,7 +281,61 @@
       }
     },
     {
-      "name": "Rooms of a game with the players online in each",
+      "name": "The finished rounds of a player, newest first: room, round, result, stake and win per option",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{apiKey}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/players/{{playerId}}/rounds",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "games",
+            "{{gameId}}",
+            "players",
+            "{{playerId}}",
+            "rounds"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "50",
+              "disabled": true
+            },
+            {
+              "key": "before",
+              "value": "",
+              "disabled": true
+            },
+            {
+              "key": "room",
+              "value": "",
+              "disabled": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Rooms of a game with the players online in each (oldest first, paged)",
       "request": {
         "method": "GET",
         "header": [
@@ -312,7 +366,18 @@
             "{{gameId}}",
             "rooms"
           ],
-          "query": []
+          "query": [
+            {
+              "key": "limit",
+              "value": "100",
+              "disabled": true
+            },
+            {
+              "key": "offset",
+              "value": "0",
+              "disabled": true
+            }
+          ]
         }
       }
     },
@@ -352,12 +417,49 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"key\": \"string\",\n  \"name\": \"string\",\n  \"capacity\": 1000,\n  \"auto\": true,\n  \"overrides\": {\n    \"title\": \"string\",\n    \"chips\": [\n      1000\n    ],\n    \"maxPerTarget\": 1000,\n    \"timing\": {\n      \"betSeconds\": 1000,\n      \"spinSeconds\": 1000,\n      \"resultSeconds\": 1000\n    }\n  }\n}",
+          "raw": "{\n  \"key\": \"string\",\n  \"name\": \"string\",\n  \"capacity\": 1000,\n  \"auto\": true,\n  \"metadata\": {},\n  \"deleteWhenEmptyMinutes\": 1000,\n  \"overrides\": {\n    \"title\": \"string\",\n    \"chips\": [\n      1000\n    ],\n    \"maxPerTarget\": 1000,\n    \"timing\": {\n      \"betSeconds\": 1000,\n      \"spinSeconds\": 1000,\n      \"resultSeconds\": 1000\n    }\n  }\n}",
           "options": {
             "raw": {
               "language": "json"
             }
           }
+        }
+      }
+    },
+    {
+      "name": "One room with the players online in it",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{apiKey}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/games/{{gameId}}/rooms/vip",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "games",
+            "{{gameId}}",
+            "rooms",
+            "vip"
+          ],
+          "query": []
         }
       }
     },
@@ -398,7 +500,7 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"key\": \"string\",\n  \"name\": \"string\",\n  \"capacity\": 1000,\n  \"auto\": true,\n  \"overrides\": {\n    \"title\": \"string\",\n    \"chips\": [\n      1000\n    ],\n    \"maxPerTarget\": 1000,\n    \"timing\": {\n      \"betSeconds\": 1000,\n      \"spinSeconds\": 1000,\n      \"resultSeconds\": 1000\n    }\n  }\n}",
+          "raw": "{\n  \"key\": \"string\",\n  \"name\": \"string\",\n  \"capacity\": 1000,\n  \"auto\": true,\n  \"metadata\": {},\n  \"deleteWhenEmptyMinutes\": 1000,\n  \"overrides\": {\n    \"title\": \"string\",\n    \"chips\": [\n      1000\n    ],\n    \"maxPerTarget\": 1000,\n    \"timing\": {\n      \"betSeconds\": 1000,\n      \"spinSeconds\": 1000,\n      \"resultSeconds\": 1000\n    }\n  }\n}",
           "options": {
             "raw": {
               "language": "json"

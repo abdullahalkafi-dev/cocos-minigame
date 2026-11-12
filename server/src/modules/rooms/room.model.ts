@@ -24,6 +24,12 @@ export interface RoomRec {
   /** Players asked for room "auto" are placed in auto rooms (first with space). */
   auto: boolean;
   overrides: RoomOverrides;
+  /** Free notes of the client (who created the room, an invite code...). Up to 10 text values. Never shown to players. */
+  metadata?: Record<string, string>;
+  /** Delete the room when nobody has been in it for this many minutes. null = keep it until it is deleted. */
+  deleteWhenEmptyMinutes?: number | null;
+  /** The last time somebody was in the room (written at most once a minute). */
+  lastActiveAt?: number;
   createdAt: number;
 }
 
@@ -35,7 +41,11 @@ const roomSchema = new Schema({
   capacity: { type: Number, default: null },
   auto: { type: Boolean, default: true },
   overrides: { type: Schema.Types.Mixed, default: {} },
+  metadata: { type: Schema.Types.Mixed, default: {} },
+  deleteWhenEmptyMinutes: { type: Number, default: null },
+  lastActiveAt: Number,
   createdAt: Number,
 }, { versionKey: false, minimize: false });
 roomSchema.index({ gameId: 1, key: 1 }, { unique: true });
+roomSchema.index({ deleteWhenEmptyMinutes: 1, lastActiveAt: 1 });
 export const RoomModel = model<RoomRec>('Room', roomSchema);

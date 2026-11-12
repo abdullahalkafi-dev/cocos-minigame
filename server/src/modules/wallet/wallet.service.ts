@@ -8,6 +8,8 @@ import type { PlayerService } from '../players/player.service.js';
 import type { PlayerRec } from '../players/player.model.js';
 import type { UserRec } from '../users/user.model.js';
 import type { Bus } from '../../infra/bus.js';
+import type { ResultRepository } from '../results/result.repository.js';
+import { ROOM_KEY_RE } from '../../config/constants.js';
 
 type Direction = 'credit' | 'debit';
 const REFERENCE_RE = /^[A-Za-z0-9_.:@-]{1,100}$/;
@@ -17,7 +19,7 @@ const REFERENCE_RE = /^[A-Za-z0-9_.:@-]{1,100}$/;
  * cash-out (debit). Every call carries a `reference` that makes it safe to retry: the same reference always
  * gives the same answer and never moves money twice.
  */
-export function createWalletService(d: { games: GameService; players: PlayerService; ledger: LedgerService; bus: Bus }) {
+export function createWalletService(d: { games: GameService; players: PlayerService; ledger: LedgerService; bus: Bus; results: ResultRepository }) {
   const playerView = (p: PlayerRec) => ({ playerId: p.externalId, displayName: p.displayName, balance: p.balance, createdAt: p.createdAt, lastSeen: p.lastSeen });
 
   const gameOf = async (account: UserRec, gameId: string, keyMode?: 'live' | 'test'): Promise<GameRec> => {
@@ -99,6 +101,26 @@ export function createWalletService(d: { games: GameService; players: PlayerServ
       return answer(pid, posted.balance, posted.id, false);
     },
 
+    /**
+     * The player's finished rounds, newest first: room, round number, winning result, what they staked and won, and the bets
+     * by option (rounds played before this field existed have `bets: null`). The history to show a player, with no webhooks needed.
+     */
+    async rounds(account: UserRec, keyMode: 'live' | 'test' | undefined, gameId: string, playerId: string, q: { limit?: unknown; before?: unknown; room?: unknown }) {
+      const g = await gameOf(account, gameId, keyMode);
+      const p = await d.players.byExternal(g._id, checkPlayerId(playerId));
+      if (!p || p.isPreview) throw notFound('This player has not been seen in this game yet', 'player_not_found');
+      const limit = Math.min(100, Math.max(1, Number(q.limit) || 50));
+      const before = q.before === undefined ? undefined : Number(q.before);
+      if (before !== undefined && (!Number.isSafeInteger(before) || before <= 0)) throw badRequest('before must be the time in milliseconds of the last round you received', 'invalid_before');
+      if (q.room !== undefined && (typeof q.room !== 'string' || !ROOM_KEY_RE.test(q.room))) throw badRequest('room must be the key of a room', 'invalid_room');
+      const rows = await d.results.forPlayer(g._id, p._id, { limit, before, roomId: q.room as string | undefined });
+      const items = rows.map(r => ({
+        game: r.slug, room: r.roomId, round: r.outcome?.round ?? null, result: r.outcome?.result ?? [], bet: r.bet, win: r.win, net: r.win - r.bet,
+        bets: r.outcome?.bets?.map(b => ({ option: b.option, label: b.label, amount: b.amount, win: b.win })) ?? null, time: r.createdAt,
+      }));
+      return { playerId: p.externalId, rounds: items, nextBefore: rows.length === limit ? items[items.length - 1].time : null };
+    },
+
     /** The player's ledger, newest first. Includes the coins the game itself moved (bets and wins). */
     async transactions(account: UserRec, keyMode: 'live' | 'test' | undefined, gameId: string, playerId: string, q: { limit?: unknown; before?: unknown }) {
       const g = await gameOf(account, gameId, keyMode);
@@ -107,7 +129,7 @@ export function createWalletService(d: { games: GameService; players: PlayerServ
       const limit = Math.min(100, Math.max(1, Number(q.limit) || 50));
       const before = typeof q.before === 'string' && /^[a-f0-9]{24}$/.test(q.before) ? q.before : undefined;
       const rows = await d.ledger.history(p._id, limit, before);
-      const items = rows.map(r => ({ id: String(r._id), type: r.kind, amount: r.delta, balanceAfter: r.balanceAfter, reference: r.reference ?? null, note: r.note ?? null, createdAt: r.createdAt }));
+      const items = rows.map(r => ({ id: String(r._id), type: r.kind, amount: r.delta, balanceAfter: r.balanceAfter, reference: r.reference ?? null, note: r.note ?? null, room: r.roomId ?? null, round: r.round ?? null, createdAt: r.createdAt }));
       return { playerId: p.externalId, balance: p.balance, transactions: items, nextBefore: rows.length === limit ? items[items.length - 1].id : null };
     },
   };

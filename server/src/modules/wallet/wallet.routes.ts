@@ -16,6 +16,7 @@ export function walletRoutes(c: Container) {
   r.get(base, c.limit(600, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.getPlayer(req.account!, ...ids(req))); });
   r.post(`${base}/credit`, c.limit(600, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.move(req.account!, ...ids(req), 'credit', req.body ?? {})); });
   r.post(`${base}/debit`, c.limit(600, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.move(req.account!, ...ids(req), 'debit', req.body ?? {})); });
+  r.get(`${base}/rounds`, c.limit(300, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.rounds(req.account!, req.keyMode, String(req.params.gameId), String(req.params.playerId), req.query)); });
   r.get(`${base}/transactions`, c.limit(300, 60_000), c.auth.requireApiKey, async (req, res) => { res.json(await c.wallet.transactions(req.account!, ...ids(req), req.query)); });
 
   // the buyer looks at the same history in the dashboard (signed in as the buyer, no API key needed)

@@ -98,11 +98,17 @@ export function createWheelService(d: {
       const hits = [r.resultTarget, ...r.extra];
 
       if (bets.length) {
-        const { perBet, perPlayer, resultText } = settleBets(r.snapshot, hits, bets.map(b => ({ id: b._id, playerId: b.playerId, target: b.target, amount: b.amount })));
+        const { perBet, perPlayer, resultText, label } = settleBets(r.snapshot, hits, bets.map(b => ({ id: b._id, playerId: b.playerId, target: b.target, amount: b.amount })));
         const winOf = new Map(perBet.map(b => [String(b.id), b.win]));
         const betsOf = new Map<string, typeof bets>();
         for (const b of bets) betsOf.set(b.playerId, [...(betsOf.get(b.playerId) ?? []), b]);
         const who = new Map((await d.players.byIds([...perPlayer.keys()])).map(p => [p._id, p]));
+        /** What one player staked and won on each option in this round. */
+        const betList = (pid: string) => {
+          const m = new Map<string, { amount: number; win: number }>();
+          for (const b of betsOf.get(pid) ?? []) { const e = m.get(b.target) ?? { amount: 0, win: 0 }; e.amount += b.amount; e.win += winOf.get(String(b._id)) ?? 0; m.set(b.target, e); }
+          return [...m].map(([option, v]) => ({ option, label: label(option), amount: v.amount, win: v.win }));
+        };
 
         // payouts in small batches: each batch is one short transaction, and anything already paid is skipped
         for (const batch of chunks([...perPlayer.keys()], PAYOUT_BATCH)) {
@@ -119,15 +125,15 @@ export function createWheelService(d: {
               const p = perPlayer.get(pid)!;
               await d.repo.markBets((betsOf.get(pid) ?? []).map(b => ({ id: b._id, win: winOf.get(String(b._id)) ?? 0 })), s);
               if (p.win > 0 && !paid.has(winRef(pid))) {
-                if (mode === 'seamless') await d.seamless.enqueueCredit(game, who.get(pid)!, p.win, winRef(pid), `Round ${r.no}`, s);
+                if (mode === 'seamless') await d.seamless.enqueueCredit(game, who.get(pid)!, p.win, winRef(pid), `Round ${r.no}`, s, { roomId: r.roomId, round: r.no });
                 else {
-                  const res = await d.ledger.post({ gameId: r.gameId, playerId: pid, delta: p.win, kind: 'win', reference: winRef(pid), note: `Round ${r.no}` }, s);
+                  const res = await d.ledger.post({ gameId: r.gameId, playerId: pid, delta: p.win, kind: 'win', reference: winRef(pid), note: `Round ${r.no}`, roomId: r.roomId, round: r.no }, s);
                   if (res) hub?.setBalance(pid, res.balance, false);   // shown to the player with the round summary
                 }
               }
               if (!haveResult.has(`rnd:${r._id}:${pid}`)) rows.push({
                 _id: `rnd:${r._id}:${pid}`, gameId: r.gameId, roomId: r.roomId, playerId: pid, slug: 'lucky-wheel', bet: p.bet, win: p.win, isPreview: !!who.get(pid)?.isPreview,
-                outcome: { summary: `Round ${r.no}: ${resultText}. Bet ${p.parts.join(', ')}`, round: r.no, result: hits }, createdAt: r.spinEnd,
+                outcome: { summary: `Round ${r.no}: ${resultText}. Bet ${p.parts.join(', ')}`, round: r.no, result: hits, bets: betList(pid) }, createdAt: r.spinEnd,
               });
             }
             await d.results.record(rows, s);
@@ -139,7 +145,10 @@ export function createWheelService(d: {
         if (real.length) {
           await d.webhooks.enqueue(game.userId, r.gameId, 'round.settled', {
             game: 'lucky-wheel', room: r.roomId, round: r.no, result: hits, playerCount: real.length, truncated: real.length > MAX_WEBHOOK_PLAYERS,
-            players: real.slice(0, MAX_WEBHOOK_PLAYERS).map(pid => ({ playerId: who.get(pid)!.externalId, bet: perPlayer.get(pid)!.bet, win: perPlayer.get(pid)!.win })),
+            players: real.slice(0, MAX_WEBHOOK_PLAYERS).map(pid => ({
+              playerId: who.get(pid)!.externalId, bet: perPlayer.get(pid)!.bet, win: perPlayer.get(pid)!.win,
+              bets: betList(pid).map(({ option, amount, win }) => ({ option, amount, win })),
+            })),
           }, { id: `evt_round_${r._id}`, livemode: game.mode !== 'test' });
         }
       }
@@ -181,7 +190,7 @@ export function createWheelService(d: {
           try {
             result = await inTransaction(async s => {
               await checkMax(s);
-              await d.ledger.record({ gameId: game._id, playerId: player._id, delta: -total, kind: 'bet', reference, note: `Round ${round.no}`, balanceAfter: paid.balance }, s);
+              await d.ledger.record({ gameId: game._id, playerId: player._id, delta: -total, kind: 'bet', reference, note: `Round ${round.no}`, roomId: room.key, round: round.no, balanceAfter: paid.balance }, s);
               await d.repo.insertBets(rows, s);
               return { balance: paid.balance, round: round.no };
             });
@@ -189,7 +198,7 @@ export function createWheelService(d: {
         } else {
           result = await inTransaction(async s => {
             await checkMax(s);
-            const paid = await d.ledger.post({ gameId: game._id, playerId: player._id, delta: -total, kind: 'bet', note: `Round ${round.no}` }, s);
+            const paid = await d.ledger.post({ gameId: game._id, playerId: player._id, delta: -total, kind: 'bet', note: `Round ${round.no}`, roomId: room.key, round: round.no }, s);
             if (!paid) throw paymentRequired('Not enough balance');
             await d.repo.insertBets(rows, s);
             return { balance: paid.balance, round: round.no };

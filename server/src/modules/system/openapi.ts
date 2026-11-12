@@ -63,11 +63,19 @@ export function buildOpenApi(serverUrl: string) {
           responses: { 200: { description: 'A page of the ledger', content: json(ref('TransactionPage')) }, ...common },
         },
       },
+      '/api/v1/games/{gameId}/players/{playerId}/rounds': {
+        get: {
+          tags: ['Wallet'], operationId: 'listPlayerRounds', summary: 'The finished rounds of a player, newest first: room, round, result, stake and win per option',
+          parameters: [gameId, playerId, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } }, { name: 'before', in: 'query', description: 'Pass `nextBefore` of the previous page', schema: { type: 'integer' } }, { name: 'room', in: 'query', description: 'Only this room', schema: { type: 'string' } }],
+          responses: { 200: { description: 'A page of rounds', content: json(ref('RoundHistoryPage')) }, 400: err('invalid_before or invalid_room'), ...common },
+        },
+      },
       '/api/v1/games/{gameId}/rooms': {
-        get: { tags: ['Rooms'], operationId: 'listRooms', summary: 'Rooms of a game with the players online in each', parameters: [gameId], responses: { 200: { description: 'Rooms', content: json({ type: 'object', properties: { rooms: { type: 'array', items: ref('Room') } } }) }, ...common } },
+        get: { tags: ['Rooms'], operationId: 'listRooms', summary: 'Rooms of a game with the players online in each (oldest first, paged)', parameters: [gameId, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 500, default: 100 } }, { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0, default: 0 } }], responses: { 200: { description: 'Rooms', content: json({ type: 'object', properties: { rooms: { type: 'array', items: ref('Room') }, total: { type: 'integer' }, limit: { type: 'integer' }, offset: { type: 'integer' } } }) }, ...common } },
         post: { tags: ['Rooms'], operationId: 'createRoom', summary: 'Create a room', parameters: [gameId], requestBody: { required: true, content: json(ref('RoomInput')) }, responses: { 200: { description: 'The room', content: json(ref('Room')) }, 400: err('invalid_room'), ...common, 409: err('room_exists or too_many_rooms') } },
       },
       '/api/v1/games/{gameId}/rooms/{key}': {
+        get: { tags: ['Rooms'], operationId: 'getRoom', summary: 'One room with the players online in it', parameters: [gameId, roomKey], responses: { 200: { description: 'The room', content: json(ref('Room')) }, ...common } },
         put: { tags: ['Rooms'], operationId: 'updateRoom', summary: 'Change a room', parameters: [gameId, roomKey], requestBody: { required: true, content: json(ref('RoomInput')) }, responses: { 200: { description: 'The room', content: json(ref('Room')) }, 400: err('invalid_room'), ...common } },
         delete: { tags: ['Rooms'], operationId: 'deleteRoom', summary: 'Delete an empty room (not "main")', parameters: [gameId, roomKey], responses: { 200: { description: 'Deleted', content: json({ type: 'object', properties: { ok: { type: 'boolean' } } }) }, ...common, 409: err('room_busy or room_protected') } },
       },
@@ -110,11 +118,12 @@ export function buildOpenApi(serverUrl: string) {
             displayName: { type: 'string', maxLength: 40 },
             avatarUrl: { type: 'string', format: 'uri', description: 'https only' },
             room: { type: 'string', description: '"auto" (default) or the key of a room.' },
+            startingBalance: { type: 'integer', minimum: 0, description: "Managed wallet only: coins for a player this call creates (ignored for a player who already exists). Saves a separate credit." },
           },
         },
         Session: {
           type: 'object', required: ['playUrl', 'sessionToken', 'expiresIn', 'gameId', 'game'],
-          properties: { playUrl: { type: 'string', format: 'uri' }, sessionToken: { type: 'string' }, expiresIn: { type: 'integer', example: 900 }, gameId: { type: 'string' }, game: { type: 'string' }, playerId: { type: ['string', 'null'] }, room: { type: 'string' } },
+          properties: { playUrl: { type: 'string', format: 'uri' }, sessionToken: { type: 'string' }, expiresIn: { type: 'integer', example: 900 }, gameId: { type: 'string' }, game: { type: 'string' }, playerId: { type: ['string', 'null'] }, playerCreated: { type: 'boolean', description: 'True when this call created the player (so startingBalance was applied)' }, room: { type: 'string' } },
         },
         GameInfo: { type: 'object', properties: { gameId: { type: 'string' }, name: { type: 'string' }, game: { type: 'string' }, status: { type: 'string' }, guestLogin: { type: 'boolean' }, walletMode: { type: 'string', enum: ['demo', 'managed', 'seamless'] }, mode: { type: 'string', enum: ['live', 'test'] } } },
         Player: { type: 'object', properties: { playerId: { type: 'string' }, displayName: { type: 'string' }, balance: { type: 'integer' }, createdAt: { type: 'integer' }, lastSeen: { type: 'integer' } } },
@@ -127,7 +136,14 @@ export function buildOpenApi(serverUrl: string) {
           type: 'object',
           properties: {
             playerId: { type: 'string' }, balance: { type: 'integer' }, nextBefore: { type: ['string', 'null'] },
-            transactions: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, type: { type: 'string', enum: ['credit', 'debit', 'bet', 'win', 'starting', 'refill'] }, amount: { type: 'integer' }, balanceAfter: { type: 'integer' }, reference: { type: ['string', 'null'] }, note: { type: ['string', 'null'] }, createdAt: { type: 'integer' } } } },
+            transactions: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, type: { type: 'string', enum: ['credit', 'debit', 'bet', 'win', 'starting', 'refill'] }, amount: { type: 'integer' }, balanceAfter: { type: 'integer' }, reference: { type: ['string', 'null'] }, note: { type: ['string', 'null'] }, room: { type: ['string', 'null'], description: 'Bets and wins of a round: the room key' }, round: { type: ['integer', 'null'], description: 'Bets and wins of a round: the round number' }, createdAt: { type: 'integer' } } } },
+          },
+        },
+        RoundHistoryPage: {
+          type: 'object',
+          properties: {
+            playerId: { type: 'string' }, nextBefore: { type: ['integer', 'null'], description: 'Pass as `before` for the next page; null on the last page' },
+            rounds: { type: 'array', items: { type: 'object', properties: { game: { type: 'string' }, room: { type: 'string' }, round: { type: ['integer', 'null'] }, result: { type: 'array', items: { type: 'string' }, description: 'Winning option ids (more than one when the bonus hits)' }, bet: { type: 'integer' }, win: { type: 'integer' }, net: { type: 'integer' }, bets: { type: ['array', 'null'], description: 'Stake and win per option; null for rounds played before this field existed', items: { type: 'object', properties: { option: { type: 'string' }, label: { type: 'string' }, amount: { type: 'integer' }, win: { type: 'integer' } } } }, time: { type: 'integer', description: 'When the round ended (ms)' } } } },
           },
         },
         RoomInput: {
@@ -135,10 +151,12 @@ export function buildOpenApi(serverUrl: string) {
           properties: {
             key: { type: 'string', pattern: '^[a-z0-9][a-z0-9_-]{0,31}$', description: 'create only' }, name: { type: 'string', maxLength: 40 },
             capacity: { type: ['integer', 'null'], minimum: 1, description: 'Soft limit of players at once; null = unlimited' }, auto: { type: 'boolean', description: 'Include in automatic placement' },
+            metadata: { type: 'object', additionalProperties: { type: 'string', maxLength: 200 }, description: 'Your own notes (who created it, an invite code...). Up to 10 entries; never shown to players.' },
+            deleteWhenEmptyMinutes: { type: ['integer', 'null'], minimum: 1, maximum: 10080, description: 'Delete the room after nobody has been in it for this many minutes; null = keep it' },
             overrides: { type: 'object', properties: { title: { type: 'string' }, chips: { type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: 5 }, maxPerTarget: { type: 'integer' }, timing: { type: 'object', properties: { betSeconds: { type: 'integer', minimum: 8, maximum: 120 }, spinSeconds: { type: 'integer', minimum: 3, maximum: 15 }, resultSeconds: { type: 'integer', minimum: 3, maximum: 20 } } } } },
           },
         },
-        Room: { type: 'object', properties: { key: { type: 'string' }, name: { type: 'string' }, capacity: { type: ['integer', 'null'] }, auto: { type: 'boolean' }, overrides: { type: 'object' }, online: { type: 'integer' }, createdAt: { type: 'integer' } } },
+        Room: { type: 'object', properties: { key: { type: 'string' }, name: { type: 'string' }, capacity: { type: ['integer', 'null'] }, auto: { type: 'boolean' }, overrides: { type: 'object' }, metadata: { type: 'object' }, deleteWhenEmptyMinutes: { type: ['integer', 'null'] }, online: { type: 'integer' }, createdAt: { type: 'integer' } } },
         Leaderboard: {
           type: 'object',
           properties: {
@@ -148,7 +166,7 @@ export function buildOpenApi(serverUrl: string) {
           },
         },
         Envelope: { type: 'object', properties: { id: { type: 'string', description: 'Unique: ignore repeats' }, type: { type: 'string' }, createdAt: { type: 'string', format: 'date-time' }, gameId: { type: ['string', 'null'] }, livemode: { type: 'boolean' }, data: { type: 'object' } } },
-        RoundSettledEvent: { allOf: [ref('Envelope'), { type: 'object', properties: { data: { type: 'object', properties: { game: { type: 'string' }, room: { type: 'string' }, round: { type: 'integer' }, result: { type: 'array', items: { type: 'string' } }, playerCount: { type: 'integer' }, truncated: { type: 'boolean' }, players: { type: 'array', items: { type: 'object', properties: { playerId: { type: 'string' }, bet: { type: 'integer' }, win: { type: 'integer' } } } } } } } }] },
+        RoundSettledEvent: { allOf: [ref('Envelope'), { type: 'object', properties: { data: { type: 'object', properties: { game: { type: 'string' }, room: { type: 'string' }, round: { type: 'integer' }, result: { type: 'array', items: { type: 'string' } }, playerCount: { type: 'integer' }, truncated: { type: 'boolean' }, players: { type: 'array', items: { type: 'object', properties: { playerId: { type: 'string' }, bet: { type: 'integer' }, win: { type: 'integer' }, bets: { type: 'array', description: 'What this player staked and won on each option', items: { type: 'object', properties: { option: { type: 'string' }, amount: { type: 'integer' }, win: { type: 'integer' } } } } } } } } } } }] },
         NeedsCoinsEvent: { allOf: [ref('Envelope'), { type: 'object', properties: { data: { type: 'object', properties: { playerId: { type: 'string' }, room: { type: 'string' }, balance: { type: 'integer' } } } } }] },
         OperationFailedEvent: { allOf: [ref('Envelope'), { type: 'object', properties: { data: { type: 'object', properties: { type: { type: 'string', enum: ['credit', 'rollback'] }, playerId: { type: 'string' }, amount: { type: 'integer' }, reference: { type: 'string' }, error: { type: 'string' } } } } }] },
         SeamlessRequest: { type: 'object', required: ['type', 'reference'], properties: { type: { type: 'string', enum: ['ping', 'balance', 'debit', 'credit', 'rollback'] }, gameId: { type: ['string', 'null'] }, livemode: { type: 'boolean' }, playerId: { type: 'string' }, amount: { type: 'integer' }, reference: { type: 'string' }, note: { type: 'string' } } },

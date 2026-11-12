@@ -45,7 +45,7 @@ export class Hud {
 
   promptRefill() {
     const cur = String(this.cfg.currencyName || 'coins');
-    if (this.cfg.walletMode === 'managed') {
+    if (this.cfg.walletMode === 'managed' || this.cfg.walletMode === 'seamless') {
       // coins come from the app around the game: tell it, so it can open its own shop, and explain to the player
       emit('needCoins', { balance: this.shown });
       this.notice(`Out of ${cur.toLowerCase()}`, `You don't have enough ${cur.toLowerCase()} for this. Add more in the app and come back to keep playing.`);

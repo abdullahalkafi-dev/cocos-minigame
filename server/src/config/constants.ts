@@ -21,4 +21,4 @@ export const MAIN_ROOM = 'main';
 /** A player counts as being in a room for this long after they were last seen there. */
 export const PRESENCE_WINDOW_SEC = 45;
 export const ROOM_KEY_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
-export const MAX_ROOMS_PER_GAME = 200;
+export const MAX_ROOMS_PER_GAME = 5000;

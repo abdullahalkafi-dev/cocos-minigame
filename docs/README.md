@@ -22,4 +22,5 @@ Start here. Each folder answers one kind of question.
 5. [`architecture/realtime.md`](architecture/realtime.md): rooms, the live hub and WebSocket push
 6. [`guides/local-development.md`](guides/local-development.md): get it running
 7. [`guides/adding-a-game.md`](guides/adding-a-game.md): the most common extension
+8. [`guides/client-faq.md`](guides/client-faq.md): answers to a client developer's 18 questions (history, rooms, wallets, limits)
 8. [`/AGENTS.md`](../AGENTS.md) if you are (or use) an AI assistant

@@ -241,11 +241,14 @@ test('many simultaneous valid requests from one address (a client server, an off
 // These two exhaust the per-address limits for a minute, so they run last.
 test('rate limits cannot be dodged by sending a different fake token each time', async () => {
   const codes: number[] = [];
+  let retryAfter: string | null = null;
   for (let i = 0; i < 40; i++) {
     const r = await fetch(h.base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer fakefakefakefakefake-${i}` }, body: JSON.stringify({ email: `nobody${i}@test.com`, password: 'wrongpassword' }) });
     codes.push(r.status);
+    if (r.status === 429) retryAfter = r.headers.get('retry-after');
   }
   assert.ok(codes.includes(429), 'the login limit applies per address, so random tokens do not help');
+  assert.ok(Number(retryAfter) > 0, 'a 429 tells the caller how many seconds to wait (Retry-After)');
 });
 
 test('repeated failed API key attempts from one address get throttled', async () => {

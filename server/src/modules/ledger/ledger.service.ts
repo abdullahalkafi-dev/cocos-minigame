@@ -12,6 +12,9 @@ export interface LedgerEntryInput {
   /** Optional idempotency key (unique per game). */
   reference?: string;
   note?: string;
+  /** Bets and wins of a round: where and which round. */
+  roomId?: string;
+  round?: number;
 }
 
 /**
@@ -27,7 +30,7 @@ export function createLedgerService(d: { players: PlayerRepository; repo: Ledger
       if (!p) return null;
       const id = await d.repo.append({
         gameId: e.gameId, playerId: e.playerId, delta: e.delta, balanceAfter: p.balance, kind: e.kind,
-        reference: e.reference ?? null, note: e.note ?? null, createdAt: Date.now(),
+        reference: e.reference ?? null, note: e.note ?? null, roomId: e.roomId ?? null, round: e.round ?? null, createdAt: Date.now(),
       }, session);
       return { balance: p.balance, id };
     },
@@ -38,7 +41,7 @@ export function createLedgerService(d: { players: PlayerRepository; repo: Ledger
     async record(e: LedgerEntryInput & { balanceAfter: number }, session: ClientSession): Promise<{ id: string }> {
       const id = await d.repo.append({
         gameId: e.gameId, playerId: e.playerId, delta: e.delta, balanceAfter: e.balanceAfter, kind: e.kind,
-        reference: e.reference ?? null, note: e.note ?? null, createdAt: Date.now(),
+        reference: e.reference ?? null, note: e.note ?? null, roomId: e.roomId ?? null, round: e.round ?? null, createdAt: Date.now(),
       }, session);
       await d.players.setBalance(e.playerId, e.balanceAfter, session);
       return { id };

@@ -15,6 +15,9 @@ export interface LedgerRec {
   kind: LedgerKind;
   reference?: string | null;
   note?: string | null;
+  /** For bets and wins of a game round: the room and the round number. */
+  roomId?: string | null;
+  round?: number | null;
   createdAt: number;
 }
 
@@ -26,6 +29,8 @@ const ledgerSchema = new Schema({
   kind: { type: String, required: true },
   reference: String,
   note: String,
+  roomId: String,
+  round: Number,
   createdAt: { type: Number, required: true },
 }, { versionKey: false });
 ledgerSchema.index({ playerId: 1, _id: -1 });

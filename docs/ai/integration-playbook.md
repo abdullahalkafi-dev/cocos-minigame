@@ -19,7 +19,8 @@ Everything here is exact. If something is not written here, do not invent it: as
 - A **player id** is the developer's own id for a person: 1-64 characters from `A-Z a-z 0-9 _ . : @ -`. The same person must always get the same id. Never use a password or a secret as a player id.
 - Amounts are **whole numbers** from 1 to 1,000,000,000,000.
 - Every error is `{ "error": "<message>", "code": "<machine_code>" }`. Branch on `code`, show `error` to humans.
-- Rate limits: 300 session creations/min, 600 wallet calls/min per key. `429 rate_limited` when exceeded.
+- Rate limits: 300 session creations/min, 600 wallet calls/min, 300 room/leaderboard/history reads/min per key. `429 rate_limited` with a `Retry-After` header (seconds) when exceeded. An address that sends 120 wrong keys or tokens in a minute is blocked for the rest of the minute.
+- `POST /api/v1/sessions` accepts `startingBalance` (managed games only): coins for a player that call creates; the answer has `playerCreated`.
 
 ## 3. Decide before coding (ask the developer if unclear)
 
@@ -82,7 +83,8 @@ On `needCoins` open the developer's coin shop. On `exit` close the game.
 POST /api/v1/games/{gameId}/players/{playerId}/credit   { "amount": 100000, "reference": "order-1001", "note": "bought 100k" }
 POST /api/v1/games/{gameId}/players/{playerId}/debit    { "amount": 40000,  "reference": "cashout-77" }
 GET  /api/v1/games/{gameId}/players/{playerId}           → { playerId, displayName, balance, ... }
-GET  /api/v1/games/{gameId}/players/{playerId}/transactions?limit=50&before=<nextBefore>
+GET  /api/v1/games/{gameId}/players/{playerId}/transactions?limit=50&before=<nextBefore>   (bets and wins have `room` and `round`)
+GET  /api/v1/games/{gameId}/players/{playerId}/rounds?limit=50&before=<nextBefore>&room=   (finished rounds: room, round, result, bet, win, net, bets by option, time; the history screen without storing webhooks)
 → credit/debit 200: { "playerId", "balance", "transactionId", "duplicate": false }
 ```
 
@@ -105,7 +107,9 @@ Set the address and copy the **signing secret** on the *API key & webhooks* page
 
 ```http
 POST /api/v1/games/{gameId}/rooms  { "key": "vip", "name": "VIP", "capacity": 20, "auto": false, "overrides": { "chips": [100000,500000,1000000], "maxPerTarget": 2000000 } }
-GET  /api/v1/games/{gameId}/rooms                      → rooms with `online` player counts (for a lobby screen)
+GET  /api/v1/games/{gameId}/rooms?limit=100&offset=0   → rooms (oldest first, `total`) with `online` player counts (for a lobby screen)
+GET  /api/v1/games/{gameId}/rooms/{key}                 → one room with its `online` count
+(create/update accept `metadata` {text values, up to 10: your notes, never shown to players} and `deleteWhenEmptyMinutes` (1-10080 or null). A game can have 5000 rooms. Only your server can create sessions for a room, so rooms are private by design.)
 POST /api/v1/sessions { ..., "room": "vip" }            → 409 room_full when full; "auto" = first room with space, a new copy is opened when all are full
 GET  /api/v1/games/{gameId}/leaderboard?room=vip&period=week&metric=winnings&limit=10&playerId=user-8841
 ```

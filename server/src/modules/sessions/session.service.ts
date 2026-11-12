@@ -1,4 +1,4 @@
-import { AVATAR_URL_MAX, DISPLAY_NAME_MAX, MAIN_ROOM, PLAYER_ID_RE, PLAYER_TTL_SEC, SESSION_TTL_SEC } from '../../config/constants.js';
+import { AVATAR_URL_MAX, DISPLAY_NAME_MAX, MAIN_ROOM, MAX_AMOUNT, PLAYER_ID_RE, PLAYER_TTL_SEC, SESSION_TTL_SEC } from '../../config/constants.js';
 import { badRequest, forbidden, notFound } from '../../common/errors.js';
 import { sign, verify } from '../../common/utils/crypto.js';
 import { gameBySlug } from '../catalog/index.js';
@@ -18,6 +18,8 @@ export interface CreateSessionBody {
   avatarUrl?: unknown;
   /** "auto" (default) or the key of one of the game's rooms. */
   room?: unknown;
+  /** Managed wallet only: coins a player gets when this call creates them (ignored for a player who already exists). */
+  startingBalance?: unknown;
   /** Older name for playerId, still accepted. */
   username?: unknown;
 }
@@ -63,11 +65,18 @@ export function createSessionService(d: { secret: string; publicUrl: string; gam
         if (!/^https:\/\//.test(avatarUrl)) throw badRequest('avatarUrl must be an https address', 'invalid_avatarUrl');
       }
 
+      let start = d.games.startingBalance(game);
+      if (body.startingBalance !== undefined) {
+        if (d.games.playerSettings(game).walletMode !== 'managed') throw badRequest("startingBalance can only be used when the game's wallet mode is 'managed'", 'starting_balance_not_supported');
+        if (typeof body.startingBalance !== 'number' || !Number.isSafeInteger(body.startingBalance) || body.startingBalance < 0 || body.startingBalance > MAX_AMOUNT) throw badRequest(`startingBalance must be a whole number between 0 and ${MAX_AMOUNT}`, 'invalid_startingBalance');
+        start = body.startingBalance;
+      }
       // the player exists from now on, so the client can credit coins before the first game load
-      const player = playerId ? await d.players.getOrCreate(game._id, playerId, { preview: false, startingBalance: d.games.startingBalance(game), displayName, avatarUrl }) : null;
+      const existed = playerId ? !!(await d.players.byExternal(game._id, playerId)) : true;
+      const player = playerId ? await d.players.getOrCreate(game._id, playerId, { preview: false, startingBalance: start, displayName, avatarUrl }) : null;
       const room = await d.rooms.assign(game, body.room, player?._id);
       const token = sign({ t: 's', lic: game._id, rm: room.key, ...(playerId ? { u: playerId } : {}) }, d.secret, SESSION_TTL_SEC);
-      return { sessionToken: token, playUrl: playUrl(game, token), expiresIn: SESSION_TTL_SEC, gameId: game._id, game: game.slug, playerId: playerId ?? null, room: room.key };
+      return { sessionToken: token, playUrl: playUrl(game, token), expiresIn: SESSION_TTL_SEC, gameId: game._id, game: game.slug, playerId: playerId ?? null, playerCreated: !!playerId && !existed, room: room.key };
     },
 
     /** Dashboard "Preview": a session whose players are marked as previews (always allowed to type a name). */

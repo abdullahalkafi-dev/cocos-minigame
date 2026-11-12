@@ -187,7 +187,7 @@ test('webhooks: signed test event, round results, retry with backoff', async () 
     assert.ok(settled, 'round.settled was delivered');
     assert.equal(settled.gameId, b.lic);
     assert.equal(settled.data.game, 'lucky-wheel');
-    assert.deepEqual(settled.data.players, [{ playerId: 'u_77', bet: 30_000, win: settled.data.players[0].win }]);
+    assert.deepEqual(settled.data.players, [{ playerId: 'u_77', bet: 30_000, win: settled.data.players[0].win, bets: [{ option: 'seven', amount: 30_000, win: settled.data.players[0].win }] }], 'the round event lists the bets by option');
     assert.ok(settled.data.result.length >= 1);
     const round = (await WheelRoundModel.findOne({}).lean())!;
     assert.equal(settled.data.round, round.no);

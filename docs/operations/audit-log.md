@@ -26,6 +26,10 @@ Audit 2 (2026-11-12). Result: 14 defects fixed (1 critical, 3 high), 5 accepted 
 
 Also hardened: login takes the same time for unknown and known emails (no account probing by timing).
 
+## Provider questions (client developer, 2026-11-12)
+
+A client's developer sent 18 questions while designing a website and Flutter app on the platform. Answers: [client-faq.md](../guides/client-faq.md). Features added because of them: player round history API, bets by option in `round.settled`, `room` and `round` in transactions, room `metadata` and `deleteWhenEmptyMinutes` (with a cleanup worker), paged room list and single-room read, 5,000 rooms per game (was 200), `startingBalance` on session creation. Two defects found while checking the answers: the game did not send `needCoins` in **seamless** games (it showed a useless refill dialog), and the `balance` event that was assumed does not exist (documented). 59 server tests pass.
+
 ## Browser and load checks (run after the fixes)
 
 All eight scripts in `scripts/e2e-*.mjs` pass against the fixed code: full story (sign-up, buy twice, customize one, two client websites, live round, dashboard shows each game's own players), managed wallet in a real browser (live WebSocket, bets to zero, `needCoins` event, live top-up), wheel phases, every popup, chip selection, media uploads (video, SVG, audio) and every dashboard screen, with no page errors. One test script (`e2e-full`) waited too little for the Players tab to load and was fixed to wait for the data. The load test was repeated at 1,000, 5,000 and 10,000 players: see [load-testing.md](load-testing.md). The dashboard and game-client source were read in full for script injection, token handling and error paths: the only findings are fix 14 above.
@@ -50,7 +54,7 @@ All eight scripts in `scripts/e2e-*.mjs` pass against the fixed code: full story
 ## How to repeat this audit
 
 ```bash
-npm test                         # 54 server tests
+npm test                         # 59 server tests
 npm run typecheck -w server && npm run typecheck -w dashboard
 npm audit --omit=dev --workspace server
 npm run loadtest -w server -- --players 1000 --seconds 70 --bet-rate 0.3

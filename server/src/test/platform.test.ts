@@ -324,7 +324,7 @@ test('openapi: the published contract matches the real routes', async () => {
       n++;
     }
   }
-  assert.equal(n, 11, 'every documented operation was checked');
+  assert.equal(n, 13, 'every documented operation was checked');
   // every documented schema reference resolves
   const text = JSON.stringify(spec);
   for (const m of text.matchAll(/#\/components\/schemas\/(\w+)/g)) assert.ok(spec.components.schemas[m[1]], 'missing schema ' + m[1]);

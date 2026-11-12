@@ -9,7 +9,7 @@ export interface ResultRec {
   slug: string;
   bet: number;
   win: number;
-  outcome: { summary: string; round?: number; result?: string[] };
+  outcome: { summary: string; round?: number; result?: string[]; bets?: { option: string; label: string; amount: number; win: number }[] };
   isPreview: boolean;
   createdAt: number;
 }
@@ -27,6 +27,6 @@ const resultSchema = new Schema({
   createdAt: Number,
 }, { versionKey: false });
 resultSchema.index({ gameId: 1, isPreview: 1, createdAt: -1 });
-resultSchema.index({ playerId: 1 });
+resultSchema.index({ playerId: 1, createdAt: -1 });
 resultSchema.index({ gameId: 1, isPreview: 1, roomId: 1, createdAt: -1 });
 export const ResultModel = model<ResultRec>('Result', resultSchema);
