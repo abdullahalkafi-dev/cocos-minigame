@@ -60,43 +60,59 @@ class MemoryCache implements Cache {
 export class RedisCache implements Cache {
   readonly kind = 'redis' as const;
   readonly redis: Redis;
+  /** While Redis is failing, calls are skipped for a few seconds instead of each waiting for its own timeout (a dead Redis must not slow every request). */
+  private downUntil = 0;
   constructor(url: string) {
     // commands wait for the connection but never longer than 1.5 s: a slow Redis must not slow the game down
     this.redis = new Redis(url, { maxRetriesPerRequest: 1, commandTimeout: 1500, retryStrategy: n => Math.min(n * 200, 3000) });
     this.redis.on('error', () => { /* reported as cache misses; reconnect is automatic */ });
+    this.redis.on('ready', () => { this.downUntil = 0; });
   }
-  async getJson<T>(key: string) {
-    try { const v = await this.redis.get(PREFIX + key); return v ? (JSON.parse(v) as T) : null; } catch { return null; }
+  get isDown() { return Date.now() < this.downUntil; }
+  /** Runs one Redis call. On failure (or while Redis is known to be down) returns `fallback` and skips Redis for 5 seconds. */
+  private async run<T>(fallback: T, fn: () => Promise<T>): Promise<T> {
+    if (this.isDown) return fallback;
+    try { return await fn(); } catch { this.downUntil = Date.now() + 5000; return fallback; }
+  }
+  /** A raw command for the rate limiter: fails at once while Redis is down, and marks it down when it fails. */
+  async command(args: string[]): Promise<any> {
+    if (this.isDown) throw new Error('redis down');
+    try { return await this.redis.call(args[0], ...args.slice(1)); } catch (e) { this.downUntil = Date.now() + 5000; throw e; }
+  }
+  getJson<T>(key: string) {
+    return this.run<T | null>(null, async () => { const v = await this.redis.get(PREFIX + key); return v ? (JSON.parse(v) as T) : null; });
   }
   async setJson(key: string, value: unknown, ttlSec: number) {
-    try { await this.redis.set(PREFIX + key, JSON.stringify(value), 'EX', Math.max(1, Math.ceil(ttlSec))); } catch { /* miss next time */ }
+    await this.run(undefined, async () => { await this.redis.set(PREFIX + key, JSON.stringify(value), 'EX', Math.max(1, Math.ceil(ttlSec))); });
   }
   async del(...keys: string[]) {
-    try { if (keys.length) await this.redis.del(...keys.map(k => PREFIX + k)); } catch { /* ignore */ }
+    await this.run(undefined, async () => { if (keys.length) await this.redis.del(...keys.map(k => PREFIX + k)); });
   }
   async lock(key: string, ttlMs: number) {
     const k = PREFIX + 'lock:' + key;
+    const noop = async () => {};
+    if (this.isDown) return noop;                      // Redis down: do not block the work
     try {
       const ok = await this.redis.set(k, '1', 'PX', ttlMs, 'NX');
       if (ok !== 'OK') return null;
       return async () => { try { await this.redis.del(k); } catch { /* expires by itself */ } };
-    } catch { return async () => {}; }   // Redis down: do not block the work
+    } catch { this.downUntil = Date.now() + 5000; return noop; }
   }
   async touchPresence(set: string, members: string[], windowSec: number) {
     if (!members.length) return;
-    try {
+    await this.run(undefined, async () => {
       const key = PREFIX + 'pres:' + set, now = Date.now();
       const p = this.redis.pipeline();
       for (const m of members) p.zadd(key, now, m);
       p.zremrangebyscore(key, '-inf', now - windowSec * 1000);
       p.expire(key, windowSec * 3);
       await p.exec();
-    } catch { /* presence is best effort */ }
+    });
   }
-  async countPresence(set: string, windowSec: number) {
-    try { return await this.redis.zcount(PREFIX + 'pres:' + set, Date.now() - windowSec * 1000, '+inf'); } catch { return 0; }
+  countPresence(set: string, windowSec: number) {
+    return this.run(0, () => this.redis.zcount(PREFIX + 'pres:' + set, Date.now() - windowSec * 1000, '+inf'));
   }
-  async flush() { try { const keys = await this.redis.keys(PREFIX + '*'); if (keys.length) await this.redis.del(...keys); } catch { /* ignore */ } }
+  async flush() { await this.run(undefined, async () => { const keys = await this.redis.keys(PREFIX + '*'); if (keys.length) await this.redis.del(...keys); }); }
   async close() { try { await this.redis.quit(); } catch { /* ignore */ } }
 }
 

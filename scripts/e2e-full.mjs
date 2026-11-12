@@ -72,7 +72,8 @@ sites.forEach(p => p.kill());
 
 for (let i = 0; i < 2; i++) {
   await page.goto(`${BASE}/games/${ids[i]}/players`);
-  await page.waitForTimeout(1500);
+  await page.waitForFunction(() => !document.querySelector('.skeleton') && document.querySelector('.page')?.textContent?.includes('Players'), null, { timeout: 30000 });
+  await page.waitForTimeout(500);
   const txt = await page.textContent('.page');
   const ok = txt.includes(names[i]) && !txt.includes(names[1 - i]);
   console.log(`6. dashboard copy #${i + 1}: shows ${names[i]}: ${txt.includes(names[i])}, hides ${names[1 - i]}: ${!txt.includes(names[1 - i])} ${ok ? 'OK' : 'FAIL'}`);

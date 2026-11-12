@@ -1,6 +1,6 @@
 # Load testing: what one server process measured
 
-Numbers below were **measured**, not estimated. Read the "what this does and does not tell you" section before quoting them to anybody.
+Numbers below were **measured**, not estimated, and **repeated on 2026-11-12 after the audit fixes** (same machine, same method; results match the first run within normal noise). Read the "what this does and does not tell you" section before quoting them to anybody.
 
 ## Method
 
@@ -18,12 +18,12 @@ Test machine: Windows 11, 12 logical cores, local MongoDB, **bots and server on 
 
 | Players connected | Dropped | State push latency p50 / p95 | Bet latency p50 / p95 / p99 | Winners shown after spin end (p95) | Server CPU avg / max | Event-loop delay p95 | Memory |
 |---|---|---|---|---|---|---|---|
-| 1,000 | 0 | 10 / 21 ms | 33 / 45 / 53 ms | 1.1 s | 11% / 36% | 28 ms | 189 MB |
-| 5,000 | 0 | 49 / 96 ms | 33 / 146 / 241 ms | 2.7 s | 35% / 78% | 29 ms | 322 MB |
-| 10,000 | 43 of 10,000 failed to connect | 96 / 185 ms | 48 / 331 / 464 ms | 5.9 s | 64% / 97% | 36 ms | 434 MB |
+| 1,000 | 0 | 10 / 21 ms | 32 / 34 / 49 ms | 1.1 s | 14% / 58% | 28 ms | 223 MB |
+| 5,000 | 0 | 41 / 85 ms | 33 / 119 / 176 ms | 2.4 s | 34% / 85% | 28 ms | 302 MB |
+| 10,000 | 36 of 10,000 failed to connect | 89 / 174 ms | 32 / 404 / 561 ms | 4.6 s | 60% / 97% | 41 ms | 431 MB |
 
 (CPU is a share of one core: 97% means one core was almost saturated, which is the single-process ceiling.)
-Each player received about one state message per second (11,540 messages per second at 10,000 players) and all 8,911 bets at 10,000 players were accepted (40 failed with network errors caused by the test machine's connection limits).
+Each player received about one state message per second (11,540 messages per second at 10,000 players) and 9,062 of 9,064 bets at 10,000 players were accepted (2 failed with network errors caused by the test machine's connection limits).
 
 ## How to read this
 
@@ -34,6 +34,10 @@ Each player received about one state message per second (11,540 messages per sec
   - All bots sat in one room. Many small rooms cost slightly more per player (one computation per room per second) but spread bets.
   - 30% betting per round is a guess; a bet rate of 100% triples the database load.
 - **Scale beyond one process:** the live hub is in-process (see [architecture/realtime.md](../architecture/realtime.md)); add Redis pub/sub or sticky routing per room first.
+
+## A second bug this test found (audit, 2026-11-12)
+
+The first rerun at 10,000 players showed 191 bets answered "rate_limited" and missing monitoring samples. The new per-address limiter for wrong keys counted requests that were still *in progress*, so any address with more than 120 simultaneous requests (all bots share one address; in real life a client's server or an office) was throttled. It now counts only finished requests answered with 401. A regression test (`many simultaneous valid requests…`) keeps it fixed.
 
 ## A bug this test found
 

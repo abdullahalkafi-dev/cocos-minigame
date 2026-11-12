@@ -231,6 +231,13 @@ test('ledger: every balance equals the sum of its entries after a mixed workload
   void TARGETS;
 });
 
+test('many simultaneous valid requests from one address (a client server, an office) are never throttled as failures', async () => {
+  const b = await h.buyer('burst@test.com', { guest: false });
+  const res = await Promise.all(Array.from({ length: 160 }, (_, i) => (i % 2 ? h.call('GET', '/api/health') : h.call('GET', '/api/v1/games', b.apiKey))));
+  assert.equal(res.filter(r => r.status === 429).length, 0);
+  assert.equal(res.filter(r => r.status === 200).length, 160);
+});
+
 // These two exhaust the per-address limits for a minute, so they run last.
 test('rate limits cannot be dodged by sending a different fake token each time', async () => {
   const codes: number[] = [];
@@ -252,3 +259,17 @@ test('repeated failed API key attempts from one address get throttled', async ()
   void b;
 });
 
+
+test('a Redis that is down costs one short delay, then requests stay fast', async () => {
+  const { RedisCache } = await import('../infra/cache.js');
+  const dead = new RedisCache('redis://127.0.0.1:1');          // nothing listens here
+  try {
+    await dead.getJson('a');                                   // the first call finds out (may wait for the timeout)
+    const t0 = Date.now();
+    for (let i = 0; i < 50; i++) { await dead.getJson('k' + i); await dead.setJson('k' + i, 1, 5); await dead.touchPresence('s', ['p'], 30); await dead.countPresence('s', 30); }
+    const release = await dead.lock('x', 1000);
+    assert.ok(release, 'work is never blocked by a dead Redis');
+    assert.ok(Date.now() - t0 < 500, `200 calls took ${Date.now() - t0} ms: they must be skipped, not each wait for a timeout`);
+    await assert.rejects(() => dead.command(['PING']));
+  } finally { await dead.close(); }
+});

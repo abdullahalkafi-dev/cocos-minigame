@@ -20,7 +20,7 @@ export function createLimiterFactory(cache: Cache): LimiterFactory {
   let n = 0;
   const store = () => (cache instanceof RedisCache
     // a failing Redis must never crash or block requests: errors become "store unavailable" and the request is let through
-    ? new RedisStore({ prefix: `mgs:rl:${n++}:`, sendCommand: (...a: string[]) => (cache.redis.call(a[0], ...a.slice(1)) as Promise<any>).catch(() => '') })
+    ? new RedisStore({ prefix: `mgs:rl:${n++}:`, sendCommand: (...a: string[]) => cache.command(a) })
     : undefined);
   const base = { standardHeaders: 'draft-7' as const, legacyHeaders: false, passOnStoreError: true, message: { error: 'Too many requests. Please slow down.', code: 'rate_limited' } };
 
@@ -30,10 +30,23 @@ export function createLimiterFactory(cache: Cache): LimiterFactory {
   });
   const factory = make as unknown as LimiterFactory;
 
-  factory.failures = (max, windowMs) => rateLimit({
-    ...base, windowMs, limit: max, store: store(),
-    skipSuccessfulRequests: true, requestWasSuccessful: (_req, res) => res.statusCode !== 401,
-    keyGenerator: req => req.ip ?? 'unknown',
-  });
+  // Counts only finished requests answered with 401 (never requests still in progress: a client server or an office behind one
+  // address legitimately has hundreds in flight at once). Kept in this process's memory: it needs no network round trip per request.
+  factory.failures = (max, windowMs): RequestHandler => {
+    const seen = new Map<string, { n: number; reset: number }>();
+    const sweep = setInterval(() => { const now = Date.now(); for (const [k, v] of seen) if (v.reset < now) seen.delete(k); }, 60_000);
+    sweep.unref();
+    return (req, res, next) => {
+      const ip = req.ip ?? 'unknown', now = Date.now();
+      const e = seen.get(ip);
+      if (e && e.reset > now && e.n >= max) { res.status(429).json(base.message); return; }
+      res.on('finish', () => {
+        if (res.statusCode !== 401) return;
+        const cur = seen.get(ip);
+        if (cur && cur.reset > Date.now()) cur.n++; else seen.set(ip, { n: 1, reset: Date.now() + windowMs });
+      });
+      next();
+    };
+  };
   return factory;
 }

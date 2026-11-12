@@ -104,7 +104,7 @@ const samples: any[] = [];
 const end = Date.now() + SECONDS * 1000;
 while (Date.now() < end) {
   await sleep(2000);
-  try { samples.push(await (await fetch(`http://127.0.0.1:${PORT}/api/metrics`, { headers: { 'x-metrics-token': 'load' } })).json()); } catch { /* skip */ }
+  try { const m: any = await (await fetch(`http://127.0.0.1:${PORT}/api/metrics`, { headers: { 'x-metrics-token': 'load' } })).json(); if (m?.eventLoopDelayMs) samples.push(m); } catch { /* skip */ }
 }
 stopping = true;
 await sleep(1500);

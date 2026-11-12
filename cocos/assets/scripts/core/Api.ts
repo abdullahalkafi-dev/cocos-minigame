@@ -61,5 +61,4 @@ export class Api {
   wheelMyBets() { return this.req<{ bets: { no: number; time: number; target: string; label: string; amount: number; win: number }[] }>('GET', '/api/play/wheel/mybets'); }
   wheelRanking() { return this.req<{ list: { rank: number; username: string; win: number; me: boolean }[]; me: { rank: number | null; username: string; win: number } }>('GET', '/api/play/wheel/ranking'); }
   refill() { return this.req<{ balance: number }>('POST', '/api/play/refill', {}); }
-  leaderboard() { return this.req<{ leaderboard: { username: string; won: number }[] }>('GET', '/api/play/leaderboard'); }
 }

@@ -2,7 +2,7 @@
 
 A full audit of the platform (server, money paths, API surface, realtime, dashboard, game client, build and deployment). Every finding below was **reproduced by a test first**, then fixed. The tests live in `server/src/test/audit.test.ts`, `security.test.ts` and `realtime.test.ts`, and stay in the suite as regression guards.
 
-Audit 2 (2026-11-12). Result: 11 defects fixed (1 critical, 3 high), 5 accepted limits, **52 server tests pass** (22 before).
+Audit 2 (2026-11-12). Result: 14 defects fixed (1 critical, 3 high), 5 accepted limits, **54 server tests pass** (22 before). The dashboard, game client, all browser end-to-end scripts and the load test were also run (see below).
 
 ## Fixed
 
@@ -20,7 +20,15 @@ Audit 2 (2026-11-12). Result: 11 defects fixed (1 critical, 3 high), 5 accepted 
 | 10 | Low | A malformed upload form (wrong field name) returned 500; uploads had no rate limit. | Noise in logs, easy abuse of disk writes. | Upload errors map to 400, upload route limited to 60/min. Test: *uploads: a malformed form…*. |
 | 11 | Low | Fire-and-forget background tasks had no error handler; one rejected promise would end the Node process. Bet amounts were checked as integers only (huge values reached the ledger). | Possible crash on a database blip; unclear errors for absurd bets. | `.catch` on every background call and a global `unhandledRejection` logger; bets must be safe integers up to 1 trillion in total. Payout lease is renewed between batches. |
 
+| 12 | Medium | The new failure limiter (fix 4) counted requests still in progress. Found by the load test: at 10,000 players 191 bets were refused with "rate_limited". | A client server or an office behind one address with 120+ simultaneous requests would be throttled. | Only finished 401 answers are counted (in memory, no extra Redis call). Test: *many simultaneous valid requests…*. |
+| 13 | Medium | A dead Redis made every cache and rate-limit call wait for its 1.5 s timeout. Found by running the browser tests against a local server whose Redis was not running: the live connection never became healthy and bets took seconds. | If Redis ever goes down, the game becomes nearly unusable instead of merely slower. | After a failure Redis is skipped for 5 seconds, so a dead Redis costs one short delay. Test: *a Redis that is down…*. |
+| 14 | Low | Game client: after the server refused a player (expired token, game stopped) the live connection retried every second forever; all clients reconnected in the same second after a restart; an unused call to a non-existent endpoint remained. | Needless load and a reconnect stampede after restarts. | No reconnect after a permanent refusal, back-off only resets after a working connection, random spread added, dead call removed (`core/Live.ts`, `core/Api.ts`). |
+
 Also hardened: login takes the same time for unknown and known emails (no account probing by timing).
+
+## Browser and load checks (run after the fixes)
+
+All eight scripts in `scripts/e2e-*.mjs` pass against the fixed code: full story (sign-up, buy twice, customize one, two client websites, live round, dashboard shows each game's own players), managed wallet in a real browser (live WebSocket, bets to zero, `needCoins` event, live top-up), wheel phases, every popup, chip selection, media uploads (video, SVG, audio) and every dashboard screen, with no page errors. One test script (`e2e-full`) waited too little for the Players tab to load and was fixed to wait for the data. The load test was repeated at 1,000, 5,000 and 10,000 players: see [load-testing.md](load-testing.md). The dashboard and game-client source were read in full for script injection, token handling and error paths: the only findings are fix 14 above.
 
 ## Checked and found sound
 
@@ -42,7 +50,7 @@ Also hardened: login takes the same time for unknown and known emails (no accoun
 ## How to repeat this audit
 
 ```bash
-npm test                         # 52 server tests
+npm test                         # 54 server tests
 npm run typecheck -w server && npm run typecheck -w dashboard
 npm audit --omit=dev --workspace server
 npm run loadtest -w server -- --players 1000 --seconds 70 --bet-rate 0.3

@@ -33,7 +33,6 @@ export class LiveFeed {
     this.ws = ws;
     ws.onopen = () => {
       ws.send(JSON.stringify({ t: 'auth', token: this.api.authToken }));
-      this.retry = 0;
       this.ping();
       if (this.pingTimer) clearInterval(this.pingTimer);
       this.pingTimer = setInterval(() => this.ping(), 4000);
@@ -41,7 +40,11 @@ export class LiveFeed {
     ws.onmessage = ev => {
       let m: any;
       try { m = JSON.parse(String(ev.data)); } catch { return; }
-      if (m.t === 'state') { this.lastMsgAt = Date.now(); this.onState(toWheelState(m)); }
+      if (m.t === 'state') {
+        this.lastMsgAt = Date.now();
+        this.retry = 0;                                     // only a working connection resets the back-off
+        this.onState(toWheelState(m));
+      }
       else if (m.t === 'pong') {
         const now = Date.now(), rtt = now - m.c;
         // the sample with the shortest round trip is the most trustworthy; slowly forget old ones
@@ -49,14 +52,21 @@ export class LiveFeed {
         if (rtt <= this.bestRtt * 1.5) this.onClock(m.s - (m.c + now) / 2);
       }
     };
-    ws.onclose = () => { if (this.pingTimer) clearInterval(this.pingTimer); this.ws = null; this.again(); };
+    ws.onclose = ev => {
+      if (this.pingTimer) clearInterval(this.pingTimer);
+      this.ws = null;
+      // the server refused this player for good (expired token, game stopped, room closed): reconnecting would only repeat it, and the HTTP polling shows the reason
+      if ([4401, 4003, 4004, 4404].includes(ev.code)) { this.closed = true; return; }
+      this.again();
+    };
     ws.onerror = () => { /* onclose follows */ };
   }
 
   private ping() { try { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'ping', c: Date.now() })); } catch { /* ignore */ } }
   private again() {
     if (this.closed) return;
-    const wait = Math.min(1000 * 2 ** this.retry++, 10000);
+    // growing pause plus a random part, so thousands of players do not all come back in the same second after a server restart
+    const wait = Math.min(1000 * 2 ** this.retry++, 10000) * (0.5 + Math.random());
     setTimeout(() => { if (!this.closed) this.open(); }, wait);
   }
 }

@@ -22,7 +22,7 @@ console.log('2. credited 60,000 ->', credit.body.balance);
 const g = await open(sess.playUrl + '&debug=1', { w: 390, h: 844, scale: 1 });
 // play the part of a Flutter/WebView host: the game posts its events to a channel named MiniGames
 await g.page.evaluate(() => { window.__events = []; window.MiniGames = { postMessage: m => window.__events.push(JSON.parse(m).type) }; });
-for (let k = 0; k < 100; k++) { if (await g.page.evaluate(() => !!window.__game?.chipNodes?.length && window.__game.chipNodes.every(Boolean))) break; await sleep(200); }
+for (let k = 0; k < 400; k++) { if (await g.page.evaluate(() => !!window.__game?.chipNodes?.length && window.__game.chipNodes.every(Boolean))) break; await sleep(200); }
 await sleep(2500);
 const shown = await g.page.evaluate(() => ({ balance: window.__game.ctx.hud.balance, name: window.__game.ctx.player.username, live: window.__game.live.healthy }));
 console.log('   live WebSocket connection in use:', shown.live ? 'OK' : 'MISMATCH (polling)');
